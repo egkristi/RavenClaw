@@ -1,0 +1,163 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ravenclaw
+  labels:
+    app.kubernetes.io/name: ravenclaw
+    app.kubernetes.io/part-of: ravenclaw
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ravenclaw-secrets
+  namespace: ravenclaw
+type: Opaque
+stringData:
+  LITELLM_API_KEY: "changeme"
+  RAVENFABRIC_TOKEN: "changeme"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ravenclaw-config
+  namespace: ravenclaw
+data:
+  ravenclaw.toml: |
+    [llm]
+    endpoint = "http://litellm.ravenclaw.svc:4000"
+    model = "gpt-4o-mini"
+    timeout_secs = 30
+
+    [ravenfabric]
+    endpoint = "http://ravenfabric.ravenclaw.svc:8080"
+    remote_exec = true
+    allowed_hosts = ["litellm.ravenclaw.svc", "ravenfabric.ravenclaw.svc"]
+
+    [security]
+    require_tls = false
+    token_lifetime_secs = 3600
+    audit_log = true
+
+    [runtime]
+    workdir = "/workspace"
+    max_agents = 10
+    health_interval_secs = 60
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ravenclaw
+  namespace: ravenclaw
+  labels:
+    app.kubernetes.io/name: ravenclaw
+    app.kubernetes.io/component: agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ravenclaw
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ravenclaw
+    spec:
+      serviceAccountName: ravenclaw
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ravenclaw
+          image: ghcr.io/egkristi/ravenclaw:latest
+          imagePullPolicy: Always
+          args:
+            - "--mode"
+            - "single"
+            - "--config"
+            - "/config/ravenclaw.toml"
+          env:
+            - name: RUST_LOG
+              value: "info"
+            - name: LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ravenclaw-secrets
+                  key: LITELLM_API_KEY
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: workspace
+              mountPath: /workspace
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          livenessProbe:
+            exec:
+              command: ["/app/ravenclaw", "--version"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command: ["/app/ravenclaw", "--version"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: ravenclaw-config
+        - name: workspace
+          emptyDir:
+            sizeLimit: 1Gi
+      terminationGracePeriodSeconds: 30
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ravenclaw
+  namespace: ravenclaw
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ravenclaw
+  namespace: ravenclaw
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ravenclaw
+  namespace: ravenclaw
+subjects:
+  - kind: ServiceAccount
+    name: ravenclaw
+    namespace: ravenclaw
+roleRef:
+  kind: Role
+  name: ravenclaw
+  apiGroup: rbac.authorization.k8s.io

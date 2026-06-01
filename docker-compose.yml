@@ -1,0 +1,66 @@
+# RavenClaw Development Environment
+# Includes LiteLLM proxy for local testing
+
+services:
+  ravenclaw:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ravenclaw-dev
+    environment:
+      - RUST_LOG=debug
+      - RAVENCLAW__LLM__ENDPOINT=http://litellm:4000
+      - LITELLM_API_KEY=${LITELLM_API_KEY:-sk-test}
+      - RAVENCLAW__RAVENFABRIC__ENDPOINT=http://ravenfabric:8080
+    volumes:
+      - ./config:/config:ro
+      - workspace:/workspace
+    ports:
+      - "8080:8080"
+    depends_on:
+      - litellm
+    networks:
+      - ravenclaw-net
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=100M
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main
+    container_name: litellm-dev
+    environment:
+      - DATABASE_URL=sqlite:///db.sqlite
+      - LITELLM_MASTER_KEY=${LITELLM_API_KEY:-sk-test}
+    volumes:
+      - ./config/litellm-config.yaml:/app/config.yaml:ro
+      - litellm-data:/app/data
+    ports:
+      - "4000:4000"
+    networks:
+      - ravenclaw-net
+    security_opt:
+      - no-new-privileges:true
+
+  # Optional: RavenFabric for swarm coordination
+  # ravenfabric:
+  #   image: ravenfabric/ravenfabric:latest
+  #   container_name: ravenfabric-dev
+  #   environment:
+  #     - RF_AUTH_TOKEN=${RAVENFABRIC_TOKEN:-rf-test}
+  #   ports:
+  #     - "8080:8080"
+  #   networks:
+  #     - ravenclaw-net
+
+volumes:
+  workspace:
+  litellm-data:
+
+networks:
+  ravenclaw-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

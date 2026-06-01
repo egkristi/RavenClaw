@@ -1,0 +1,27 @@
+# LiteLLM Configuration for RavenClaw Development
+# https://docs.litellm.ai/docs/proxy/configs
+
+model_list:
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+  
+  - model_name: claude-sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+  
+  - model_name: gemini-flash
+    litellm_params:
+      model: gemini/gemini-3-flash-preview
+      api_key: os.environ/GOOGLE_API_KEY
+
+general_settings:
+  master_key: os.environ/LITELLM_API_KEY
+  database_url: sqlite:///db.sqlite
+  store_model_in_db: true
+
+litellm_settings:
+  drop_params: true
+  set_verbose: false

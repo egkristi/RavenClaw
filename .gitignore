@@ -1,0 +1,45 @@
+# Rust
+/target/
+**/target/
+Cargo.lock
+
+# Build artifacts
+*.rs.bk
+*.so
+*.dylib
+*.dll
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Config (local overrides)
+config/local.toml
+config/*.local.toml
+
+# Kubernetes
+*.kubeconfig
+
+# Docker
+docker-compose.override.yml
+
+# Test artifacts
+coverage/
+*.profraw
+*.profdata
+
+# OS
+.DS_Store
+Thumbs.db
