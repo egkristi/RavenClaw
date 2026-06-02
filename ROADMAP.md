@@ -45,8 +45,10 @@ can't be added without breaking one, it doesn't ship in core.
 | Rust unit tests | ✅ Working | 149 tests across all 5 modules; `mockito`-based HTTP tests for all 4 providers covering success, auth failure, rate limit, server error, and invalid JSON paths |
 | Agent loop / ReAct planning | ❌ Not implemented | One-shot send-and-exit; no perceive→plan→act→observe |
 | Tool-use / function calling | ❌ Not implemented | Agent cannot call tools |
-| Streaming responses | ❌ Not implemented | `stream: None` hardcoded |
-| Conversation memory | ❌ Not implemented | In-memory messages only, lost on exit |
+| Streaming responses | ✅ Working | SSE streaming for LiteLLM, default non-streaming fallback for others |
+| Conversation memory | ✅ Working | `ConversationMemory` struct with configurable max history, auto-trim |
+| Interactive REPL | ✅ Working | `--repl` flag with stdin loop, streaming output, `/exit` `/reset` commands |
+| System prompt / persona | ✅ Working | `LLMConfig.system_prompt` field, CLI `--system-prompt`, env var override |
 | Pre-built binary releases | 📋 Wired, untagged | CI produces them on tag; none released yet |
 
 ### 🔧 Known build & correctness blockers

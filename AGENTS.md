@@ -14,13 +14,13 @@ RavenClaw is a **lightweight, secure Rust agent framework** with multi-provider 
 - **Repository:** https://github.com/egkristi/RavenClaw
 - **Build:** `cargo build --release` (~3MB stripped binary, ~7ms startup)
 
-### Architecture (4 modules)
+### Architecture (5 modules)
 
 ```
 src/
 ├── main.rs      — CLI entry point (clap), config loading, mode dispatch
-├── agent.rs     — Agent implementations (single, swarm stubs, supervisor stubs)
-├── llm.rs       — LLM provider abstraction (trait + 4 clients + multi-model manager)
+├── agent.rs     — Agent implementations (single, swarm stubs, supervisor stubs, REPL, ConversationMemory)
+├── llm.rs       — LLM provider abstraction (trait + 4 clients + multi-model manager + streaming)
 ├── config.rs    — Config structs, TOML/env loading, validation
 └── error.rs     — Unified error types
 ```
@@ -31,18 +31,20 @@ src/
 |---|---|
 | Single agent mode | ✅ Working — sends prompt, logs response |
 | Multi-provider (LiteLLM, OpenAI, OpenRouter, Ollama) | ✅ Working |
-| Multi-model manager | ✅ Working — iterates all configured providers |
+| Multi-model manager | ✅ Working — iterates all configured providers, round-robin routing |
 | CLI with env-var overrides | ✅ Working |
 | OpenAI-compatible API support | ✅ Working — any `/v1/chat/completions` endpoint |
 | Container security (non-root, read-only FS, dropped caps) | ✅ Working |
-| Verification suite (94 tests, 8 modules) | ✅ Working |
-| `--exec` mode | ❌ Dead code — CLI arg parsed but never used |
-| Swarm mode | ❌ Stub — warns "not yet implemented", exits 0 |
-| Supervisor mode | ❌ Stub — warns "not yet implemented", exits 0 |
+| Verification suite (157 tests, 5 modules, 0 warnings) | ✅ Working |
+| `--exec` mode | ✅ Working — one-shot command execution with response to stdout |
+| Streaming responses | ✅ Working — SSE streaming for LiteLLM, default fallback for others |
+| Conversation memory | ✅ Working — `ConversationMemory` struct with configurable max history |
+| Interactive REPL | ✅ Working — `--repl` flag with stdin loop, streaming output |
+| System prompt / persona | ✅ Working — `LLMConfig.system_prompt`, CLI `--system-prompt`, env var |
+| Swarm mode | ❌ Stub — returns error "not yet implemented" |
+| Supervisor mode | ❌ Stub — returns error "not yet implemented" |
 | Tool-use / function calling | ❌ Not implemented |
 | Agent loop / ReAct planning | ❌ Not implemented — one-shot send-and-exit |
-| Streaming responses | ❌ Not implemented — `stream: None` hardcoded |
-| Conversation memory | ❌ Not implemented — in-memory only, lost on exit |
 | RavenFabric integration | Partial — config struct exists, binary included in container, runtime wiring pending |
 | GitHub Actions CI/CD | ✅ Implemented — fmt + clippy + test, 5-target builds, multi-arch images, Cosign + SBOM + provenance + Trivy, crates.io publish, releases |
 | Security scanning | ✅ Implemented — CodeQL, cargo-audit, cargo-deny, cargo-outdated, cargo-udeps, Trivy (FS + config), Hadolint, Kubescape, OSSF Scorecard, dependency review |

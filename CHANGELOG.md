@@ -5,6 +5,13 @@ All notable changes to RavenClaw will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Streaming responses — `LLMProviderTrait::chat_stream()` with SSE parsing for LiteLLM, default non-streaming fallback for other providers
+- System prompt / persona configuration — `LLMConfig.system_prompt` field with CLI `--system-prompt` and `RAVENCLAW_SYSTEM_PROMPT` env var override
+- Conversation memory — `ConversationMemory` struct with configurable max history, automatic trimming of oldest messages
+- Interactive REPL mode — `--repl` / `-R` flag for stdin-based continuous conversation with streaming output, `/exit`, `/quit`, `/reset` commands
+- `futures` crate dependency for streaming support
+- `reqwest` `stream` feature enabled for `bytes_stream()` SSE parsing
+- 8 new tests: system_prompt default, system_prompt custom, ConversationMemory (5), REPL CLI flag
 - `--exec` mode now fully wired — one-shot command execution with response printed to stdout
 - Comprehensive Rust unit tests: 149 tests across all modules (was 3)
 - `serial_test` crate for serializing env-dependent tests to prevent env var leakage

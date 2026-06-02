@@ -73,6 +73,16 @@ pub struct LLMConfig {
     /// Request timeout in seconds
     #[serde(default = "default_timeout")]
     pub timeout_secs: u64,
+
+    /// System prompt / persona for the agent
+    #[serde(default = "default_system_prompt")]
+    pub system_prompt: String,
+}
+
+pub fn default_system_prompt() -> String {
+    "You are RavenClaw, a lightweight autonomous agent. \
+        Be concise, efficient, and secure. Always validate inputs and outputs."
+        .to_string()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -199,6 +209,7 @@ impl Default for LLMConfig {
             model: default_model(),
             api_key: None,
             timeout_secs: default_timeout(),
+            system_prompt: default_system_prompt(),
         }
     }
 }
@@ -388,6 +399,16 @@ mod tests {
         assert_eq!(config.timeout_secs, 30);
         assert!(config.api_key.is_none());
         assert!(config.endpoint.is_empty());
+        assert!(config.system_prompt.contains("RavenClaw"));
+    }
+
+    #[test]
+    fn test_system_prompt_custom() {
+        let config = LLMConfig {
+            system_prompt: "You are a helpful coding assistant.".to_string(),
+            ..LLMConfig::default()
+        };
+        assert_eq!(config.system_prompt, "You are a helpful coding assistant.");
     }
 
     #[test]
@@ -399,6 +420,7 @@ mod tests {
                 model: "gpt-4o-mini".to_string(),
                 api_key: None,
                 timeout_secs: 30,
+                system_prompt: default_system_prompt(),
             },
             llms: vec![],
             ravenfabric: RavenFabricConfig::default(),
@@ -427,6 +449,7 @@ mod tests {
                 model: "gpt-4o-mini".to_string(),
                 api_key: Some("key".to_string()),
                 timeout_secs: 30,
+                system_prompt: default_system_prompt(),
             },
             llms: vec![],
             ravenfabric: RavenFabricConfig::default(),
@@ -453,6 +476,7 @@ mod tests {
                 model: "gpt-4o-mini".to_string(),
                 api_key: Some("key".to_string()),
                 timeout_secs: 30,
+                system_prompt: default_system_prompt(),
             },
             llms: vec![],
             ravenfabric: RavenFabricConfig::default(),
@@ -477,6 +501,7 @@ mod tests {
                 model: "gpt-4o".to_string(),
                 api_key: Some("sk-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: default_system_prompt(),
             },
             llms: vec![],
             ravenfabric: RavenFabricConfig::default(),
@@ -506,6 +531,7 @@ mod tests {
                 model: "llama3.1".to_string(),
                 api_key: None,
                 timeout_secs: 60,
+                system_prompt: default_system_prompt(),
             }],
             ravenfabric: RavenFabricConfig::default(),
             security: SecurityConfig {
@@ -569,6 +595,7 @@ mod tests {
                 model: "anthropic/claude-sonnet-4-20250514".to_string(),
                 api_key: Some("or-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: default_system_prompt(),
             },
             llms: vec![],
             ravenfabric: RavenFabricConfig::default(),
@@ -595,6 +622,7 @@ mod tests {
                 model: "llama3.1".to_string(),
                 api_key: None,
                 timeout_secs: 30,
+                system_prompt: default_system_prompt(),
             },
             llms: vec![],
             ravenfabric: RavenFabricConfig::default(),
@@ -621,6 +649,7 @@ mod tests {
                 model: "gpt-4o-mini".to_string(),
                 api_key: Some("key".to_string()),
                 timeout_secs: 30,
+                system_prompt: default_system_prompt(),
             },
             llms: vec![],
             ravenfabric: RavenFabricConfig::default(),
@@ -645,6 +674,7 @@ mod tests {
                 model: "gpt-4o-mini".to_string(),
                 api_key: Some("key".to_string()),
                 timeout_secs: 30,
+                system_prompt: default_system_prompt(),
             },
             llms: vec![],
             ravenfabric: RavenFabricConfig::default(),
@@ -671,6 +701,7 @@ mod tests {
                     model: "llama3.1".to_string(),
                     api_key: None,
                     timeout_secs: 60,
+                    system_prompt: default_system_prompt(),
                 },
                 LLMConfig {
                     provider: LLMProvider::LiteLLM,
@@ -678,6 +709,7 @@ mod tests {
                     model: "gpt-4o-mini".to_string(),
                     api_key: Some("key".to_string()),
                     timeout_secs: 30,
+                    system_prompt: default_system_prompt(),
                 },
             ],
             ravenfabric: RavenFabricConfig::default(),
@@ -703,6 +735,7 @@ mod tests {
                 model: "gpt-4o-mini".to_string(),
                 api_key: Some("key".to_string()),
                 timeout_secs: 30,
+                system_prompt: default_system_prompt(),
             }],
             ravenfabric: RavenFabricConfig::default(),
             security: SecurityConfig {
@@ -765,6 +798,7 @@ mod tests {
             model: "gpt-4o".to_string(),
             api_key: Some("sk-test".to_string()),
             timeout_secs: 120,
+            system_prompt: default_system_prompt(),
         };
         assert_eq!(config.provider, LLMProvider::OpenAI);
         assert_eq!(config.model, "gpt-4o");
@@ -887,6 +921,7 @@ mod tests {
                 model: "gpt-4o".to_string(),
                 api_key: Some("sk-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: default_system_prompt(),
             },
             llms: vec![],
             ravenfabric: RavenFabricConfig::default(),
@@ -911,6 +946,7 @@ mod tests {
                 model: "anthropic/claude-sonnet-4-20250514".to_string(),
                 api_key: Some("or-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: default_system_prompt(),
             },
             llms: vec![],
             ravenfabric: RavenFabricConfig::default(),
@@ -935,6 +971,7 @@ mod tests {
                 model: "gpt-4o-mini".to_string(),
                 api_key: Some("key".to_string()),
                 timeout_secs: 30,
+                system_prompt: default_system_prompt(),
             },
             llms: vec![],
             ravenfabric: RavenFabricConfig::default(),
@@ -1029,6 +1066,7 @@ mod tests {
                 model: "llama3.1".to_string(),
                 api_key: None,
                 timeout_secs: 60,
+                system_prompt: default_system_prompt(),
             },
             llms: vec![],
             ravenfabric: RavenFabricConfig::default(),
@@ -1053,6 +1091,7 @@ mod tests {
                 model: "anthropic/claude-sonnet-4-20250514".to_string(),
                 api_key: Some("or-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: default_system_prompt(),
             },
             llms: vec![],
             ravenfabric: RavenFabricConfig::default(),
@@ -1077,6 +1116,7 @@ mod tests {
                 model: "gpt-4o-mini".to_string(),
                 api_key: Some("key".to_string()),
                 timeout_secs: 30,
+                system_prompt: default_system_prompt(),
             },
             llms: vec![],
             ravenfabric: RavenFabricConfig::default(),

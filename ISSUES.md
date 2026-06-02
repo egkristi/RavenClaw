@@ -63,27 +63,23 @@ need periodic review.
 
 ## 🧪 Code Quality
 
-### `next_client()` round-robin method never called
+### ~~`next_client()` round-robin method never called~~ ✅ Fixed
 
 **Problem:** `MultiModelManager::next_client()` in `src/llm.rs` implements
-round-robin load balancing across providers, but is never invoked anywhere in
+round-robin load balancing across providers, but was never invoked anywhere in
 the codebase.
 
-**Impact:** Multi-model mode initializes all providers but always uses the first
-one. Round-robin distribution is dead code.
+**Fix:** Changed return type to `Option`, removed `#[allow(dead_code)]`, wired
+into `run_single_multi()` in agent.rs. Added 2 new tests.
 
-**Tracking:** ROADMAP.md v0.5 — Provider-agnostic + cost-aware routing.
+### ~~`handle_response()` code duplicated across providers~~ ✅ Fixed
 
-### `handle_response()` code duplicated across providers
+**Problem:** The `handle_response()` method in each LLM client contained nearly
+identical JSON parsing logic.
 
-**Problem:** The `handle_response()` method in each LLM client
-(`LiteLLMClient`, `OpenRouterClient`, `OllamaClient`, `OpenAIClient`) contains
-nearly identical JSON parsing logic. This is a copy-paste pattern.
-
-**Impact:** Bug fixes or improvements to response handling must be applied to
-all 4 providers independently. High maintenance burden.
-
-**Fix:** Extract a shared `handle_response()` function or use a macro.
+**Fix:** Extracted shared `handle_openai_response()` async function. Replaced
+duplicated code in LiteLLM, OpenRouter, and OpenAI clients. Ollama kept its own
+handler (different API format).
 
 ### Dead code: unused enum variants and struct fields
 

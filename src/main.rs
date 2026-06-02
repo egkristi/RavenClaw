@@ -45,6 +45,14 @@ struct Args {
     /// Model name (overrides config)
     #[arg(long, env = "RAVENCLAW_MODEL")]
     model: Option<String>,
+
+    /// System prompt / persona (overrides config)
+    #[arg(long, env = "RAVENCLAW_SYSTEM_PROMPT")]
+    system_prompt: Option<String>,
+
+    /// Interactive REPL mode (read-eval-print loop)
+    #[arg(long, short = 'R', conflicts_with = "exec")]
+    repl: bool,
 }
 
 #[tokio::main]
@@ -81,24 +89,46 @@ async fn main() -> anyhow::Result<()> {
     if let Some(model) = args.model {
         config.llm.model = model;
     }
+    if let Some(system_prompt) = args.system_prompt {
+        config.llm.system_prompt = system_prompt;
+    }
 
     info!(mode = %args.mode, "Configuration loaded");
 
     // Handle --exec one-shot mode (overrides mode, uses first available provider)
     if let Some(exec_prompt) = args.exec {
         info!("Running in --exec one-shot mode");
+        let system_prompt = &config.llm.system_prompt;
         if !config.llms.is_empty() {
             let multi_llm = llm::MultiModelManager::new(config.llms.clone())?;
             if let Some(client) = multi_llm.get_client(0) {
-                let response = agent::run_exec(client.clone(), &exec_prompt).await?;
+                let response = agent::run_exec(client.clone(), &exec_prompt, system_prompt).await?;
                 println!("{}", response);
             } else {
                 anyhow::bail!("No LLM providers available for --exec mode");
             }
         } else {
             let llm = llm::create_client(&config.llm)?;
-            let response = agent::run_exec(llm, &exec_prompt).await?;
+            let response = agent::run_exec(llm, &exec_prompt, system_prompt).await?;
             println!("{}", response);
+        }
+        info!("RavenClaw shutdown complete");
+        return Ok(());
+    }
+
+    // Handle --repl interactive mode
+    if args.repl {
+        info!("Running in interactive REPL mode");
+        if !config.llms.is_empty() {
+            let multi_llm = llm::MultiModelManager::new(config.llms.clone())?;
+            if let Some(client) = multi_llm.get_client(0) {
+                agent::run_repl(client.clone(), config).await?;
+            } else {
+                anyhow::bail!("No LLM providers available for --repl mode");
+            }
+        } else {
+            let llm = llm::create_client(&config.llm)?;
+            agent::run_repl(llm, config).await?;
         }
         info!("RavenClaw shutdown complete");
         return Ok(());

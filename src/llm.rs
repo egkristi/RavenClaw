@@ -2,10 +2,23 @@
 //!
 //! Supports LiteLLM, OpenAI, OpenRouter, and Ollama with a unified trait-based API.
 
+use futures::Stream;
 use reqwest::{Client, Response};
 use serde::{Deserialize, Serialize};
+use std::pin::Pin;
 use std::sync::Arc;
 use thiserror::Error;
+
+/// A streaming chunk of an LLM response
+#[derive(Debug, Clone)]
+pub struct StreamChunk {
+    pub content: String,
+    #[allow(dead_code)]
+    pub finish_reason: Option<String>,
+}
+
+/// Type alias for streaming response
+pub type StreamResult = Pin<Box<dyn Stream<Item = Result<StreamChunk, LLMError>> + Send>>;
 
 use crate::config::{LLMConfig, LLMProvider};
 
@@ -84,8 +97,51 @@ pub struct Usage {
 #[async_trait::async_trait]
 pub trait LLMProviderTrait: Send + Sync {
     async fn chat(&self, messages: Vec<ChatMessage>) -> Result<ChatResponse, LLMError>;
+    async fn chat_stream(&self, messages: Vec<ChatMessage>) -> Result<StreamResult, LLMError> {
+        // Default: non-streaming fallback
+        let response = self.chat(messages).await?;
+        let content = response
+            .choices
+            .first()
+            .map(|c| c.message.content.clone())
+            .unwrap_or_default();
+        let finish_reason = response
+            .choices
+            .first()
+            .and_then(|c| c.finish_reason.clone());
+
+        let stream = futures::stream::once(async move {
+            Ok(StreamChunk {
+                content,
+                finish_reason,
+            })
+        });
+        Ok(Box::pin(stream))
+    }
     fn provider_name(&self) -> &str;
     fn model(&self) -> &str;
+}
+
+/// Shared response handler for OpenAI-compatible providers
+async fn handle_openai_response(response: Response) -> Result<ChatResponse, LLMError> {
+    let status = response.status();
+
+    if status.is_success() {
+        response
+            .json::<ChatResponse>()
+            .await
+            .map_err(|e| LLMError::InvalidResponse(e.to_string()))
+    } else if status == reqwest::StatusCode::UNAUTHORIZED {
+        Err(LLMError::AuthFailed)
+    } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        Err(LLMError::RateLimited)
+    } else {
+        let body = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+        Err(LLMError::RequestFailed(format!("{}: {}", status, body)))
+    }
 }
 
 /// LiteLLM client (OpenAI-compatible API)
@@ -135,28 +191,7 @@ impl LiteLLMClient {
             .await
             .map_err(|e| LLMError::RequestFailed(e.to_string()))?;
 
-        self.handle_response(response).await
-    }
-
-    async fn handle_response(&self, response: Response) -> Result<ChatResponse, LLMError> {
-        let status = response.status();
-
-        if status.is_success() {
-            response
-                .json::<ChatResponse>()
-                .await
-                .map_err(|e| LLMError::InvalidResponse(e.to_string()))
-        } else if status == reqwest::StatusCode::UNAUTHORIZED {
-            Err(LLMError::AuthFailed)
-        } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            Err(LLMError::RateLimited)
-        } else {
-            let body = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            Err(LLMError::RequestFailed(format!("{}: {}", status, body)))
-        }
+        handle_openai_response(response).await
     }
 }
 
@@ -165,6 +200,101 @@ impl LLMProviderTrait for LiteLLMClient {
     async fn chat(&self, messages: Vec<ChatMessage>) -> Result<ChatResponse, LLMError> {
         let request = self.build_request(messages);
         self.send_request(request).await
+    }
+
+    async fn chat_stream(&self, messages: Vec<ChatMessage>) -> Result<StreamResult, LLMError> {
+        let request = ChatRequest {
+            model: self.config.model.clone(),
+            messages,
+            temperature: Some(0.7),
+            max_tokens: Some(2048),
+            stream: Some(true),
+        };
+
+        let mut req = self
+            .client
+            .post(format!(
+                "{}/v1/chat/completions",
+                self.config.endpoint.trim_end_matches('/')
+            ))
+            .json(&request);
+
+        if let Some(ref key) = self.config.api_key {
+            req = req.header("Authorization", format!("Bearer {}", key));
+        }
+
+        let response = req
+            .send()
+            .await
+            .map_err(|e| LLMError::RequestFailed(e.to_string()))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            if status == reqwest::StatusCode::UNAUTHORIZED {
+                return Err(LLMError::AuthFailed);
+            } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                return Err(LLMError::RateLimited);
+            } else {
+                let body = response
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "Unknown error".to_string());
+                return Err(LLMError::RequestFailed(format!("{}: {}", status, body)));
+            }
+        }
+
+        // Parse SSE stream — map byte chunks to StreamChunks, filtering empty ones
+        use futures::StreamExt;
+        let stream = response
+            .bytes_stream()
+            .filter_map(|chunk_result| async move {
+                match chunk_result {
+                    Err(e) => Some(Err(LLMError::RequestFailed(e.to_string()))),
+                    Ok(bytes) => {
+                        let text = String::from_utf8_lossy(&bytes);
+                        let mut content = String::new();
+                        let mut finish_reason = None;
+
+                        for line in text.lines() {
+                            if let Some(data) = line.strip_prefix("data: ") {
+                                if data == "[DONE]" {
+                                    finish_reason = Some("stop".to_string());
+                                    continue;
+                                }
+                                if let Ok(sse_chunk) =
+                                    serde_json::from_str::<serde_json::Value>(data)
+                                {
+                                    if let Some(choice) =
+                                        sse_chunk["choices"].as_array().and_then(|c| c.first())
+                                    {
+                                        if let Some(delta) = choice["delta"].as_object() {
+                                            if let Some(c) = delta["content"].as_str() {
+                                                content.push_str(c);
+                                            }
+                                        }
+                                        if let Some(reason) = choice["finish_reason"].as_str() {
+                                            if reason != "null" {
+                                                finish_reason = Some(reason.to_string());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if content.is_empty() && finish_reason.is_none() {
+                            None // filter out empty chunks
+                        } else {
+                            Some(Ok(StreamChunk {
+                                content,
+                                finish_reason,
+                            }))
+                        }
+                    }
+                }
+            });
+
+        Ok(Box::pin(stream))
     }
 
     fn provider_name(&self) -> &str {
@@ -235,24 +365,7 @@ impl LLMProviderTrait for OpenRouterClient {
             .await
             .map_err(|e| LLMError::RequestFailed(e.to_string()))?;
 
-        let status = response.status();
-
-        if status.is_success() {
-            response
-                .json::<ChatResponse>()
-                .await
-                .map_err(|e| LLMError::InvalidResponse(e.to_string()))
-        } else if status == reqwest::StatusCode::UNAUTHORIZED {
-            Err(LLMError::AuthFailed)
-        } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            Err(LLMError::RateLimited)
-        } else {
-            let body = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            Err(LLMError::RequestFailed(format!("{}: {}", status, body)))
-        }
+        handle_openai_response(response).await
     }
 
     fn provider_name(&self) -> &str {
@@ -422,24 +535,7 @@ impl LLMProviderTrait for OpenAIClient {
             .await
             .map_err(|e| LLMError::RequestFailed(e.to_string()))?;
 
-        let status = response.status();
-
-        if status.is_success() {
-            response
-                .json::<ChatResponse>()
-                .await
-                .map_err(|e| LLMError::InvalidResponse(e.to_string()))
-        } else if status == reqwest::StatusCode::UNAUTHORIZED {
-            Err(LLMError::AuthFailed)
-        } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            Err(LLMError::RateLimited)
-        } else {
-            let body = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            Err(LLMError::RequestFailed(format!("{}: {}", status, body)))
-        }
+        handle_openai_response(response).await
     }
 
     fn provider_name(&self) -> &str {
@@ -481,10 +577,12 @@ impl MultiModelManager {
     }
 
     /// Round-robin selection for load balancing
-    #[allow(dead_code)]
-    pub fn next_client(&self, last_index: usize) -> &Arc<dyn LLMProviderTrait> {
+    pub fn next_client(&self, last_index: usize) -> Option<&Arc<dyn LLMProviderTrait>> {
+        if self.clients.is_empty() {
+            return None;
+        }
         let next = (last_index + 1) % self.clients.len();
-        &self.clients[next]
+        Some(&self.clients[next])
     }
 }
 
@@ -580,6 +678,7 @@ mod tests {
                 model: "gpt-4o-mini".to_string(),
                 api_key: Some("test-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let client = LiteLLMClient::new(&config).unwrap();
@@ -608,6 +707,7 @@ mod tests {
                 model: "gpt-4o-mini".to_string(),
                 api_key: Some("bad-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let client = LiteLLMClient::new(&config).unwrap();
@@ -634,6 +734,7 @@ mod tests {
                 model: "gpt-4o-mini".to_string(),
                 api_key: Some("test-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let client = LiteLLMClient::new(&config).unwrap();
@@ -660,6 +761,7 @@ mod tests {
                 model: "gpt-4o-mini".to_string(),
                 api_key: Some("test-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let client = LiteLLMClient::new(&config).unwrap();
@@ -687,6 +789,7 @@ mod tests {
                 model: "gpt-4o-mini".to_string(),
                 api_key: Some("test-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let client = LiteLLMClient::new(&config).unwrap();
@@ -717,6 +820,7 @@ mod tests {
                 model: "anthropic/claude-sonnet-4-20250514".to_string(),
                 api_key: Some("or-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let client = OpenRouterClient::new(&config).unwrap();
@@ -744,6 +848,7 @@ mod tests {
                 model: "anthropic/claude-sonnet-4-20250514".to_string(),
                 api_key: Some("bad-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let client = OpenRouterClient::new(&config).unwrap();
@@ -770,6 +875,7 @@ mod tests {
                 model: "anthropic/claude-sonnet-4-20250514".to_string(),
                 api_key: Some("or-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let client = OpenRouterClient::new(&config).unwrap();
@@ -796,6 +902,7 @@ mod tests {
                 model: "anthropic/claude-sonnet-4-20250514".to_string(),
                 api_key: Some("or-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let client = OpenRouterClient::new(&config).unwrap();
@@ -823,6 +930,7 @@ mod tests {
                 model: "anthropic/claude-sonnet-4-20250514".to_string(),
                 api_key: Some("or-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let client = OpenRouterClient::new(&config).unwrap();
@@ -851,6 +959,7 @@ mod tests {
                 model: "gpt-4o".to_string(),
                 api_key: Some("sk-test".to_string()),
                 timeout_secs: 60,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let client = OpenAIClient::new(&config).unwrap();
@@ -878,6 +987,7 @@ mod tests {
                 model: "gpt-4o".to_string(),
                 api_key: Some("bad-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let client = OpenAIClient::new(&config).unwrap();
@@ -904,6 +1014,7 @@ mod tests {
                 model: "gpt-4o".to_string(),
                 api_key: Some("sk-test".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let client = OpenAIClient::new(&config).unwrap();
@@ -930,6 +1041,7 @@ mod tests {
                 model: "gpt-4o".to_string(),
                 api_key: Some("sk-test".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let client = OpenAIClient::new(&config).unwrap();
@@ -957,6 +1069,7 @@ mod tests {
                 model: "gpt-4o".to_string(),
                 api_key: Some("sk-test".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let client = OpenAIClient::new(&config).unwrap();
@@ -985,6 +1098,7 @@ mod tests {
                 model: "llama3.1".to_string(),
                 api_key: None,
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let client = OllamaClient::new(&config).unwrap();
@@ -1013,6 +1127,7 @@ mod tests {
                 model: "llama3.1".to_string(),
                 api_key: None,
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let client = OllamaClient::new(&config).unwrap();
@@ -1039,6 +1154,7 @@ mod tests {
                 model: "llama3.1".to_string(),
                 api_key: None,
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let client = OllamaClient::new(&config).unwrap();
@@ -1065,6 +1181,7 @@ mod tests {
                 model: "llama3.1".to_string(),
                 api_key: Some("bad-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let client = OllamaClient::new(&config).unwrap();
@@ -1085,6 +1202,7 @@ mod tests {
             model: "gpt-4o-mini".to_string(),
             api_key: Some("test".to_string()),
             timeout_secs: 30,
+            system_prompt: crate::config::default_system_prompt(),
         };
 
         let client = create_client(&config).unwrap();
@@ -1100,6 +1218,7 @@ mod tests {
             model: "llama3.1".to_string(),
             api_key: None,
             timeout_secs: 30,
+            system_prompt: crate::config::default_system_prompt(),
         };
 
         let client = OllamaClient::new(&config).unwrap();
@@ -1115,6 +1234,7 @@ mod tests {
             model: "gpt-4o".to_string(),
             api_key: Some("sk-test".to_string()),
             timeout_secs: 60,
+            system_prompt: crate::config::default_system_prompt(),
         };
 
         let client = OpenAIClient::new(&config).unwrap();
@@ -1130,6 +1250,7 @@ mod tests {
             model: "anthropic/claude-sonnet-4-20250514".to_string(),
             api_key: Some("sk-test".to_string()),
             timeout_secs: 30,
+            system_prompt: crate::config::default_system_prompt(),
         };
 
         let client = OpenRouterClient::new(&config).unwrap();
@@ -1152,6 +1273,7 @@ mod tests {
             model: "gpt-4o-mini".to_string(),
             api_key: Some("test".to_string()),
             timeout_secs: 30,
+            system_prompt: crate::config::default_system_prompt(),
         };
 
         let manager = MultiModelManager::new(vec![config]).unwrap();
@@ -1169,6 +1291,7 @@ mod tests {
                 model: "gpt-4o-mini".to_string(),
                 api_key: Some("test".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             },
             LLMConfig {
                 provider: LLMProvider::Ollama,
@@ -1176,6 +1299,7 @@ mod tests {
                 model: "llama3.1".to_string(),
                 api_key: None,
                 timeout_secs: 60,
+                system_prompt: crate::config::default_system_prompt(),
             },
         ];
 
@@ -1194,6 +1318,7 @@ mod tests {
                 model: "gpt-4o-mini".to_string(),
                 api_key: Some("test".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             },
             LLMConfig {
                 provider: LLMProvider::Ollama,
@@ -1201,15 +1326,16 @@ mod tests {
                 model: "llama3.1".to_string(),
                 api_key: None,
                 timeout_secs: 60,
+                system_prompt: crate::config::default_system_prompt(),
             },
         ];
 
         let manager = MultiModelManager::new(configs).unwrap();
         // Start at index 0, next should be index 1
-        let next = manager.next_client(0);
+        let next = manager.next_client(0).unwrap();
         assert_eq!(next.provider_name(), "ollama");
         // Next after index 1 wraps to index 0
-        let next = manager.next_client(1);
+        let next = manager.next_client(1).unwrap();
         assert_eq!(next.provider_name(), "litellm");
     }
 
@@ -1287,6 +1413,7 @@ mod tests {
             model: "gpt-4o-mini".to_string(),
             api_key: None,
             timeout_secs: 30,
+            system_prompt: crate::config::default_system_prompt(),
         }];
 
         let result = MultiModelManager::new(configs);
@@ -1313,6 +1440,7 @@ mod tests {
                 model: "test-model".to_string(),
                 api_key: Some("test-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let client = create_client(&config).unwrap();
@@ -1367,6 +1495,7 @@ mod tests {
             model: "gpt-4o-mini".to_string(),
             api_key: Some("test".to_string()),
             timeout_secs: u64::MAX,
+            system_prompt: crate::config::default_system_prompt(),
         };
 
         let result = LiteLLMClient::new(&config);
@@ -1381,6 +1510,7 @@ mod tests {
             model: "gpt-4o".to_string(),
             api_key: Some("sk-test".to_string()),
             timeout_secs: 30,
+            system_prompt: crate::config::default_system_prompt(),
         };
 
         let client = OpenAIClient::new(&config).unwrap();
@@ -1396,6 +1526,7 @@ mod tests {
             model: "anthropic/claude-sonnet-4-20250514".to_string(),
             api_key: Some("or-key".to_string()),
             timeout_secs: 30,
+            system_prompt: crate::config::default_system_prompt(),
         };
 
         let client = OpenRouterClient::new(&config).unwrap();
@@ -1412,6 +1543,7 @@ mod tests {
             model: "llama3.1".to_string(),
             api_key: Some("some-key".to_string()),
             timeout_secs: 30,
+            system_prompt: crate::config::default_system_prompt(),
         };
 
         let client = OllamaClient::new(&config).unwrap();
@@ -1523,6 +1655,7 @@ mod tests {
             model: "llama3.1".to_string(),
             api_key: None,
             timeout_secs: 30,
+            system_prompt: crate::config::default_system_prompt(),
         };
 
         let client = create_client(&config).unwrap();
@@ -1535,5 +1668,28 @@ mod tests {
         assert!(manager.get_client(0).is_none());
         assert!(manager.get_client(100).is_none());
         assert!(manager.get_client(usize::MAX).is_none());
+    }
+
+    #[test]
+    fn test_multi_model_next_client_empty() {
+        let manager = MultiModelManager::new(vec![]).unwrap();
+        assert!(manager.next_client(0).is_none());
+    }
+
+    #[test]
+    fn test_multi_model_next_client_single() {
+        let config = LLMConfig {
+            provider: LLMProvider::LiteLLM,
+            endpoint: "http://localhost:4000".to_string(),
+            model: "gpt-4o-mini".to_string(),
+            api_key: Some("test".to_string()),
+            timeout_secs: 30,
+            system_prompt: crate::config::default_system_prompt(),
+        };
+
+        let manager = MultiModelManager::new(vec![config]).unwrap();
+        // With one client, next_client wraps to index 0
+        let next = manager.next_client(0).unwrap();
+        assert_eq!(next.provider_name(), "litellm");
     }
 }

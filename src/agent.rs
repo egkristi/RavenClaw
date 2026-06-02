@@ -5,20 +5,226 @@
 use crate::config::Config;
 use crate::error::Result;
 use crate::llm::{ChatMessage, LLMProviderTrait, MultiModelManager};
+use futures::StreamExt;
 use std::sync::Arc;
 use tracing::{info, warn};
 
+/// In-memory conversation memory — stores message history for the session.
+/// Messages are lost when the process exits.
+#[derive(Debug, Clone)]
+pub struct ConversationMemory {
+    /// Maximum number of messages to retain (0 = unlimited)
+    max_messages: usize,
+    /// Stored message history
+    messages: Vec<ChatMessage>,
+}
+
+impl ConversationMemory {
+    /// Create a new conversation memory with the given system prompt.
+    /// `max_messages` caps history length (oldest user/assistant pairs are dropped first).
+    pub fn new(system_prompt: &str, max_messages: usize) -> Self {
+        Self {
+            max_messages,
+            messages: vec![ChatMessage {
+                role: "system".to_string(),
+                content: system_prompt.to_string(),
+            }],
+        }
+    }
+
+    /// Add a user message and return the full message history for an LLM call.
+    pub fn add_user_message(&mut self, content: &str) -> &[ChatMessage] {
+        self.messages.push(ChatMessage {
+            role: "user".to_string(),
+            content: content.to_string(),
+        });
+        self.trim_to_max();
+        &self.messages
+    }
+
+    /// Add an assistant message to history.
+    pub fn add_assistant_message(&mut self, content: &str) {
+        self.messages.push(ChatMessage {
+            role: "assistant".to_string(),
+            content: content.to_string(),
+        });
+        self.trim_to_max();
+    }
+
+    /// Get the current message history.
+    #[allow(dead_code)]
+    pub fn history(&self) -> &[ChatMessage] {
+        &self.messages
+    }
+
+    /// Trim oldest non-system messages when over the limit.
+    fn trim_to_max(&mut self) {
+        if self.max_messages == 0 {
+            return;
+        }
+        while self.messages.len() > self.max_messages {
+            // Remove the oldest non-system message (index 1, since index 0 is system)
+            if self.messages.len() > 1 {
+                self.messages.remove(1);
+            } else {
+                break;
+            }
+        }
+    }
+}
+
+/// Run a one-shot command via --exec mode with streaming output
+/// Sends the prompt to the LLM and prints tokens as they arrive.
+#[allow(dead_code)]
+pub async fn run_exec_stream(
+    llm: Arc<dyn LLMProviderTrait>,
+    prompt: &str,
+    system_prompt: &str,
+) -> Result<String> {
+    info!(
+        provider = llm.provider_name(),
+        model = llm.model(),
+        "Exec one-shot streaming mode"
+    );
+
+    let messages = vec![
+        ChatMessage {
+            role: "system".to_string(),
+            content: system_prompt.to_string(),
+        },
+        ChatMessage {
+            role: "user".to_string(),
+            content: prompt.to_string(),
+        },
+    ];
+
+    let mut stream = llm.chat_stream(messages).await.map_err(|e| {
+        crate::error::RavenClawError::CommandExecution(format!("LLM stream request failed: {}", e))
+    })?;
+
+    let mut full_response = String::new();
+    while let Some(chunk) = stream.next().await {
+        match chunk {
+            Ok(chunk) => {
+                full_response.push_str(&chunk.content);
+            }
+            Err(e) => {
+                warn!(error = %e, "Stream chunk error");
+            }
+        }
+    }
+
+    if full_response.is_empty() {
+        return Err(crate::error::RavenClawError::CommandExecution(
+            "LLM returned empty response".to_string(),
+        ));
+    }
+
+    info!(
+        provider = llm.provider_name(),
+        model = llm.model(),
+        "Exec streaming response received"
+    );
+    Ok(full_response)
+}
+
+/// Run an interactive REPL (read-eval-print loop) with conversation memory.
+/// Reads prompts from stdin, sends them to the LLM with streaming, and prints responses.
+/// Type `/exit` or `/quit` to exit, `/reset` to clear conversation history.
+pub async fn run_repl(llm: Arc<dyn LLMProviderTrait>, config: Config) -> Result<()> {
+    let system_prompt = &config.llm.system_prompt;
+    let mut memory = ConversationMemory::new(system_prompt, 50);
+
+    info!(
+        provider = llm.provider_name(),
+        model = llm.model(),
+        "Starting interactive REPL mode"
+    );
+
+    println!("RavenClaw REPL — type your message, or /exit to quit.");
+    println!("System: {}", system_prompt);
+    println!();
+
+    let mut line = String::new();
+
+    loop {
+        line.clear();
+        print!("> ");
+        use std::io::Write;
+        std::io::stdout().flush().ok();
+
+        let bytes_read = std::io::stdin().read_line(&mut line).map_err(|e| {
+            crate::error::RavenClawError::CommandExecution(format!("stdin read error: {}", e))
+        })?;
+
+        if bytes_read == 0 {
+            // EOF
+            println!();
+            break;
+        }
+
+        let input = line.trim();
+        if input.is_empty() {
+            continue;
+        }
+
+        match input {
+            "/exit" | "/quit" => {
+                println!("Goodbye!");
+                break;
+            }
+            "/reset" => {
+                memory = ConversationMemory::new(system_prompt, 50);
+                println!("Conversation reset.");
+                continue;
+            }
+            _ => {}
+        }
+
+        // Add user message and get history
+        let history = memory.add_user_message(input);
+
+        // Send to LLM with streaming
+        match llm.chat_stream(history.to_vec()).await {
+            Ok(mut stream) => {
+                let mut full_response = String::new();
+                while let Some(chunk) = stream.next().await {
+                    match chunk {
+                        Ok(chunk) => {
+                            print!("{}", chunk.content);
+                            std::io::stdout().flush().ok();
+                            full_response.push_str(&chunk.content);
+                        }
+                        Err(e) => {
+                            warn!(error = %e, "Stream chunk error");
+                        }
+                    }
+                }
+                println!();
+                memory.add_assistant_message(&full_response);
+            }
+            Err(e) => {
+                eprintln!("Error: {}", e);
+            }
+        }
+    }
+
+    info!("REPL session ended");
+    Ok(())
+}
+
 /// Run a one-shot command via --exec mode
 /// Sends the prompt to the LLM and returns the response text.
-pub async fn run_exec(llm: Arc<dyn LLMProviderTrait>, prompt: &str) -> Result<String> {
+pub async fn run_exec(
+    llm: Arc<dyn LLMProviderTrait>,
+    prompt: &str,
+    system_prompt: &str,
+) -> Result<String> {
     info!(
         provider = llm.provider_name(),
         model = llm.model(),
         "Exec one-shot mode"
     );
-
-    let system_prompt = "You are RavenClaw, a lightweight autonomous agent. \
-        Be concise, efficient, and secure. Always validate inputs and outputs.";
 
     let messages = vec![
         ChatMessage {
@@ -54,14 +260,13 @@ pub async fn run_exec(llm: Arc<dyn LLMProviderTrait>, prompt: &str) -> Result<St
 }
 
 /// Run a single autonomous agent (single-provider mode)
-pub async fn run_single(llm: Arc<dyn LLMProviderTrait>, _config: Config) -> Result<()> {
+pub async fn run_single(llm: Arc<dyn LLMProviderTrait>, config: Config) -> Result<()> {
     info!(
         "Starting single agent mode with provider: {}",
         llm.provider_name()
     );
 
-    let system_prompt = "You are RavenClaw, a lightweight autonomous agent. \
-        Be concise, efficient, and secure. Always validate inputs and outputs.";
+    let system_prompt = &config.llm.system_prompt;
 
     let messages = vec![
         ChatMessage {
@@ -106,14 +311,13 @@ pub async fn run_supervisor(_llm: Arc<dyn LLMProviderTrait>, _config: Config) ->
 }
 
 /// Run a single autonomous agent (multi-model mode)
-pub async fn run_single_multi(multi_llm: MultiModelManager, _config: Config) -> Result<()> {
+pub async fn run_single_multi(multi_llm: MultiModelManager, config: Config) -> Result<()> {
     info!(
         "Starting single agent mode (multi-model) with {} providers",
         multi_llm.client_count()
     );
 
-    let system_prompt = "You are RavenClaw, a lightweight autonomous agent. \
-        Be concise, efficient, and secure. Always validate inputs and outputs.";
+    let system_prompt = &config.llm.system_prompt;
 
     let messages = vec![
         ChatMessage {
@@ -126,9 +330,16 @@ pub async fn run_single_multi(multi_llm: MultiModelManager, _config: Config) -> 
         },
     ];
 
-    // Test each configured provider
+    // Round-robin: start with first provider, then rotate
+    let mut last_index = 0;
     for i in 0..multi_llm.client_count() {
-        if let Some(client) = multi_llm.get_client(i) {
+        let client = if i == 0 {
+            multi_llm.get_client(0)
+        } else {
+            multi_llm.next_client(last_index)
+        };
+
+        if let Some(client) = client {
             match client.chat(messages.clone()).await {
                 Ok(response) => {
                     if let Some(choice) = response.choices.first() {
@@ -139,6 +350,7 @@ pub async fn run_single_multi(multi_llm: MultiModelManager, _config: Config) -> 
                     warn!(error = %e, provider = client.provider_name(), model = client.model(), "Provider request failed");
                 }
             }
+            last_index = i;
         }
     }
 
@@ -294,10 +506,13 @@ mod tests {
                 model: "gpt-4o-mini".to_string(),
                 api_key: Some("test-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let llm = crate::llm::create_client(&config).unwrap();
-            let response = run_exec(llm, "Hello!").await.unwrap();
+            let response = run_exec(llm, "Hello!", &config.system_prompt)
+                .await
+                .unwrap();
 
             assert_eq!(response, "Hello from agent!");
             mock.assert();
@@ -322,10 +537,11 @@ mod tests {
                 model: "gpt-4o-mini".to_string(),
                 api_key: Some("test-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let llm = crate::llm::create_client(&config).unwrap();
-            let result = run_exec(llm, "Hello!").await;
+            let result = run_exec(llm, "Hello!", &config.system_prompt).await;
 
             assert!(result.is_err());
             assert!(format!("{}", result.unwrap_err()).contains("empty response"));
@@ -349,10 +565,11 @@ mod tests {
                 model: "gpt-4o-mini".to_string(),
                 api_key: Some("test-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let llm = crate::llm::create_client(&config).unwrap();
-            let result = run_exec(llm, "Hello!").await;
+            let result = run_exec(llm, "Hello!", &config.system_prompt).await;
 
             assert!(result.is_err());
             assert!(format!("{}", result.unwrap_err()).contains("LLM request failed"));
@@ -376,6 +593,7 @@ mod tests {
                 model: "gpt-4o-mini".to_string(),
                 api_key: Some("test-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let llm = crate::llm::create_client(&config).unwrap();
@@ -414,6 +632,7 @@ mod tests {
                 model: "gpt-4o-mini".to_string(),
                 api_key: Some("bad-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let llm = crate::llm::create_client(&config).unwrap();
@@ -451,6 +670,7 @@ mod tests {
                 model: "gpt-4o-mini".to_string(),
                 api_key: Some("test-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             }];
 
             let multi_llm = crate::llm::MultiModelManager::new(configs).unwrap();
@@ -490,6 +710,7 @@ mod tests {
                 model: "gpt-4o-mini".to_string(),
                 api_key: Some("bad-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             }];
 
             let multi_llm = crate::llm::MultiModelManager::new(configs).unwrap();
@@ -521,6 +742,7 @@ mod tests {
             model: "gpt-4o-mini".to_string(),
             api_key: Some("test".to_string()),
             timeout_secs: 30,
+            system_prompt: crate::config::default_system_prompt(),
         }];
 
         let multi_llm = crate::llm::MultiModelManager::new(configs).unwrap();
@@ -551,6 +773,7 @@ mod tests {
             model: "gpt-4o-mini".to_string(),
             api_key: Some("test".to_string()),
             timeout_secs: 30,
+            system_prompt: crate::config::default_system_prompt(),
         }];
 
         let multi_llm = crate::llm::MultiModelManager::new(configs).unwrap();
@@ -591,13 +814,70 @@ mod tests {
                 model: "anthropic/claude-sonnet-4-20250514".to_string(),
                 api_key: Some("or-key".to_string()),
                 timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
             };
 
             let llm = crate::llm::create_client(&config).unwrap();
-            let response = run_exec(llm, "Hello!").await.unwrap();
+            let response = run_exec(llm, "Hello!", &config.system_prompt)
+                .await
+                .unwrap();
 
             assert_eq!(response, "Hello from agent!");
             mock.assert();
         });
+    }
+
+    // ── ConversationMemory tests ──────────────────────────────────────
+
+    #[test]
+    fn test_conversation_memory_new() {
+        let mem = ConversationMemory::new("You are a helpful assistant.", 10);
+        assert_eq!(mem.history().len(), 1);
+        assert_eq!(mem.history()[0].role, "system");
+        assert_eq!(mem.history()[0].content, "You are a helpful assistant.");
+    }
+
+    #[test]
+    fn test_conversation_memory_add_user_message() {
+        let mut mem = ConversationMemory::new("System prompt.", 10);
+        let history = mem.add_user_message("Hello!");
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[1].role, "user");
+        assert_eq!(history[1].content, "Hello!");
+    }
+
+    #[test]
+    fn test_conversation_memory_add_assistant_message() {
+        let mut mem = ConversationMemory::new("System prompt.", 10);
+        mem.add_user_message("Hello!");
+        mem.add_assistant_message("Hi there!");
+        assert_eq!(mem.history().len(), 3);
+        assert_eq!(mem.history()[2].role, "assistant");
+        assert_eq!(mem.history()[2].content, "Hi there!");
+    }
+
+    #[test]
+    fn test_conversation_memory_trim() {
+        // max_messages=3 means system + 2 messages max
+        let mut mem = ConversationMemory::new("System.", 3);
+        mem.add_user_message("msg1");
+        mem.add_assistant_message("resp1");
+        assert_eq!(mem.history().len(), 3);
+
+        // Adding a 4th message should trim the oldest non-system (msg1)
+        mem.add_user_message("msg2");
+        assert_eq!(mem.history().len(), 3);
+        // The oldest user message should have been removed
+        assert_eq!(mem.history()[1].content, "resp1");
+        assert_eq!(mem.history()[2].content, "msg2");
+    }
+
+    #[test]
+    fn test_conversation_memory_unlimited() {
+        let mut mem = ConversationMemory::new("System.", 0);
+        for i in 0..100 {
+            mem.add_user_message(&format!("msg{}", i));
+        }
+        assert_eq!(mem.history().len(), 101); // system + 100 messages
     }
 }
