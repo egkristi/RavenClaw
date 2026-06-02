@@ -238,4 +238,238 @@ mod tests {
         }
         // Compile-time check: all function signatures are valid
     }
+
+    // ── Mockito-based agent tests ──────────────────────────────────────
+
+    fn sample_chat_response_json(model: &str) -> String {
+        format!(
+            r#"{{
+            "id": "chat-123",
+            "object": "chat.completion",
+            "created": 1717000000,
+            "model": "{}",
+            "choices": [
+                {{
+                    "index": 0,
+                    "message": {{
+                        "role": "assistant",
+                        "content": "Hello from agent!"
+                    }},
+                    "finish_reason": "stop"
+                }}
+            ],
+            "usage": {{
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "total_tokens": 15
+            }}
+        }}"#,
+            model
+        )
+    }
+
+    fn with_mockito<F, Fut>(f: F)
+    where
+        F: FnOnce(mockito::ServerGuard) -> Fut,
+        Fut: std::future::Future<Output = ()>,
+    {
+        let server = mockito::Server::new();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(f(server));
+    }
+
+    #[test]
+    fn test_run_exec_with_mockito() {
+        with_mockito(|mut server| async move {
+            let mock = server
+                .mock("POST", "/v1/chat/completions")
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(sample_chat_response_json("gpt-4o-mini"))
+                .create();
+
+            let config = crate::config::LLMConfig {
+                provider: crate::config::LLMProvider::LiteLLM,
+                endpoint: server.url(),
+                model: "gpt-4o-mini".to_string(),
+                api_key: Some("test-key".to_string()),
+                timeout_secs: 30,
+            };
+
+            let llm = crate::llm::create_client(&config).unwrap();
+            let response = run_exec(llm, "Hello!").await.unwrap();
+
+            assert_eq!(response, "Hello from agent!");
+            mock.assert();
+        });
+    }
+
+    #[test]
+    fn test_run_exec_with_mockito_empty_response() {
+        with_mockito(|mut server| async move {
+            let mock = server
+                .mock("POST", "/v1/chat/completions")
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(
+                    r#"{"id":"x","object":"chat.completion","created":0,"model":"x","choices":[]}"#,
+                )
+                .create();
+
+            let config = crate::config::LLMConfig {
+                provider: crate::config::LLMProvider::LiteLLM,
+                endpoint: server.url(),
+                model: "gpt-4o-mini".to_string(),
+                api_key: Some("test-key".to_string()),
+                timeout_secs: 30,
+            };
+
+            let llm = crate::llm::create_client(&config).unwrap();
+            let result = run_exec(llm, "Hello!").await;
+
+            assert!(result.is_err());
+            assert!(format!("{}", result.unwrap_err()).contains("empty response"));
+            mock.assert();
+        });
+    }
+
+    #[test]
+    fn test_run_exec_with_mockito_llm_error() {
+        with_mockito(|mut server| async move {
+            let mock = server
+                .mock("POST", "/v1/chat/completions")
+                .with_status(500)
+                .with_header("content-type", "application/json")
+                .with_body(r#"{"error":"Internal error"}"#)
+                .create();
+
+            let config = crate::config::LLMConfig {
+                provider: crate::config::LLMProvider::LiteLLM,
+                endpoint: server.url(),
+                model: "gpt-4o-mini".to_string(),
+                api_key: Some("test-key".to_string()),
+                timeout_secs: 30,
+            };
+
+            let llm = crate::llm::create_client(&config).unwrap();
+            let result = run_exec(llm, "Hello!").await;
+
+            assert!(result.is_err());
+            assert!(format!("{}", result.unwrap_err()).contains("LLM request failed"));
+            mock.assert();
+        });
+    }
+
+    #[test]
+    fn test_run_single_with_mockito() {
+        with_mockito(|mut server| async move {
+            let mock = server
+                .mock("POST", "/v1/chat/completions")
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(sample_chat_response_json("gpt-4o-mini"))
+                .create();
+
+            let config = crate::config::LLMConfig {
+                provider: crate::config::LLMProvider::LiteLLM,
+                endpoint: server.url(),
+                model: "gpt-4o-mini".to_string(),
+                api_key: Some("test-key".to_string()),
+                timeout_secs: 30,
+            };
+
+            let llm = crate::llm::create_client(&config).unwrap();
+            let cfg = crate::config::Config {
+                llm: crate::config::LLMConfig::default(),
+                llms: vec![],
+                ravenfabric: crate::config::RavenFabricConfig::default(),
+                security: crate::config::SecurityConfig {
+                    require_tls: false,
+                    token_lifetime_secs: 3600,
+                    audit_log: false,
+                },
+                runtime: crate::config::RuntimeConfig::default(),
+            };
+            let result = run_single(llm, cfg).await;
+
+            // run_single logs the response but always returns Ok(())
+            assert!(result.is_ok());
+            mock.assert();
+        });
+    }
+
+    #[test]
+    fn test_run_single_with_mockito_llm_error() {
+        with_mockito(|mut server| async move {
+            let mock = server
+                .mock("POST", "/v1/chat/completions")
+                .with_status(401)
+                .with_header("content-type", "application/json")
+                .with_body(r#"{"error":"Unauthorized"}"#)
+                .create();
+
+            let config = crate::config::LLMConfig {
+                provider: crate::config::LLMProvider::LiteLLM,
+                endpoint: server.url(),
+                model: "gpt-4o-mini".to_string(),
+                api_key: Some("bad-key".to_string()),
+                timeout_secs: 30,
+            };
+
+            let llm = crate::llm::create_client(&config).unwrap();
+            let cfg = crate::config::Config {
+                llm: crate::config::LLMConfig::default(),
+                llms: vec![],
+                ravenfabric: crate::config::RavenFabricConfig::default(),
+                security: crate::config::SecurityConfig {
+                    require_tls: false,
+                    token_lifetime_secs: 3600,
+                    audit_log: false,
+                },
+                runtime: crate::config::RuntimeConfig::default(),
+            };
+            // run_single catches LLM errors internally and logs them, returns Ok(())
+            let result = run_single(llm, cfg).await;
+            assert!(result.is_ok());
+            mock.assert();
+        });
+    }
+
+    #[test]
+    fn test_run_single_multi_with_mockito() {
+        with_mockito(|mut server| async move {
+            let mock = server
+                .mock("POST", "/v1/chat/completions")
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(sample_chat_response_json("gpt-4o-mini"))
+                .create();
+
+            let configs = vec![crate::config::LLMConfig {
+                provider: crate::config::LLMProvider::LiteLLM,
+                endpoint: server.url(),
+                model: "gpt-4o-mini".to_string(),
+                api_key: Some("test-key".to_string()),
+                timeout_secs: 30,
+            }];
+
+            let multi_llm = crate::llm::MultiModelManager::new(configs).unwrap();
+            let cfg = crate::config::Config {
+                llm: crate::config::LLMConfig::default(),
+                llms: vec![],
+                ravenfabric: crate::config::RavenFabricConfig::default(),
+                security: crate::config::SecurityConfig {
+                    require_tls: false,
+                    token_lifetime_secs: 3600,
+                    audit_log: false,
+                },
+                runtime: crate::config::RuntimeConfig::default(),
+            };
+            let result = run_single_multi(multi_llm, cfg).await;
+
+            // run_single_multi logs responses but always returns Ok(())
+            assert!(result.is_ok());
+            mock.assert();
+        });
+    }
 }

@@ -11,8 +11,9 @@
 RavenClaw is a lightweight, secure Rust agent framework with multi-provider LLM
 support. One static binary, zero runtime dependencies — no Python, no Node, no JVM.
 
-> **Status: Pre-Alpha (v0.1.0).** The provider layer, deployment tooling, and the
-> verification + supply-chain pipeline work today. The agent loop, tool-use, and
+> **Status: Pre-Alpha (v0.1.0).** The provider layer, one-shot execution (`--exec`),
+> reproducible multi-arch builds, and the verification + supply-chain pipeline work
+> today (v0.2 foundations complete). The agent loop, tool-use, MCP, and
 > swarm/supervisor modes are on the [roadmap](ROADMAP.md). This README marks
 > ✅ built vs. 📋 planned — honestly. Trust is a feature; we don't inflate it.
 
@@ -69,8 +70,9 @@ See the **[ROADMAP](ROADMAP.md)** for how we get from here to there.
 
 ### Verified across every target
 
-- A **94-check verification suite** (`scripts/verify.sh`) spanning **8 modules** across **4 deployment targets** — local binary, Docker, cross-compiled Linux, and Kubernetes — including security and performance checks. Each module runs independently; results are logged.
-- *Note:* these are **system/integration checks** (shell-orchestrated, requiring live services such as LiteLLM/Docker/kubectl). Rust-level unit tests are currently minimal and are being expanded — see [ROADMAP](ROADMAP.md).
+- **100+ Rust unit tests** (incl. `mockito`-backed provider request/response/error paths), runnable anywhere via `cargo test`.
+- Plus a **94-check verification suite** (`scripts/verify.sh`) spanning **8 modules** across **4 deployment targets** — local binary, Docker, cross-compiled Linux, and Kubernetes — including security and performance checks.
+- *Note:* the 94 verification checks are **system/integration level** (shell-orchestrated, requiring live services such as LiteLLM/Docker/kubectl).
 
 ---
 
@@ -88,6 +90,9 @@ cargo build --release
 export LITELLM_API_KEY="your-key"
 export RAVENCLAW__LLM__ENDPOINT="http://localhost:4000"
 ./target/release/ravenclaw --mode single
+
+# …or run a one-shot task and exit
+./target/release/ravenclaw --exec "Summarize the latest release notes"
 ```
 
 > **Note:** Pre-built binaries are wired in CI and publish on tagged releases; none tagged yet. Build from source for now. See [ROADMAP.md](ROADMAP.md).
@@ -221,8 +226,9 @@ health_interval_secs = 60
 |---|---|---|
 | `single` | ✅ **Working** | Sends prompt to LLM, logs response (one-shot, no agent loop yet) |
 | `single` (multi-model) | ✅ **Working** | Iterates all configured providers, logs each response |
-| `swarm` | 📋 Planned | Currently a stub that warns and exits — see [ROADMAP.md](ROADMAP.md) |
-| `supervisor` | 📋 Planned | Currently a stub that warns and exits — see [ROADMAP.md](ROADMAP.md) |
+| `--exec "<task>"` | ✅ **Working** | One-shot task execution, then exit |
+| `swarm` | 📋 Planned | Returns a clear "not implemented" error (no silent exit) — see [ROADMAP.md](ROADMAP.md) |
+| `supervisor` | 📋 Planned | Returns a clear "not implemented" error (no silent exit) — see [ROADMAP.md](ROADMAP.md) |
 
 ## Building from source
 
@@ -322,11 +328,12 @@ Container images target both `linux/amd64` and `linux/arm64`.
 | CI/CD pipeline | ✅ Implemented | fmt + clippy + test, 5-target builds, multi-arch images, Cosign + SBOM + provenance + Trivy, crates.io publish, releases |
 | Security scanning | ✅ Implemented | CodeQL, cargo-audit, cargo-deny, Trivy (FS + config), Hadolint, Kubescape, OSSF Scorecard |
 | Verification suite | ✅ Working | 94 system/integration checks · 8 modules · 4 targets (`scripts/verify.sh`) |
-| Rust unit tests | ⚠️ Minimal | 3 smoke-level tests; `mockito` unused — expanding (see roadmap) |
+| Rust unit tests | ✅ Working | 100+ tests, incl. `mockito`-backed provider request/response/error paths |
+| Reproducible builds | ✅ Working | `Cargo.lock` committed (`--locked`), multi-arch Docker cross-linker, RavenFabric agent checksum-verified |
+| `--exec` one-shot mode | ✅ Working | Run a single task, then exit |
 | Multi-model routing | ⚠️ Partial | `next_client()` round-robin exists but is not yet wired into a strategy |
 | RavenFabric integration | ⚠️ Partial | Config + container binary present; runtime wiring pending |
-| `--exec` one-shot mode | 📋 Planned | CLI arg parsed but not yet used |
-| Swarm / Supervisor modes | 📋 Planned | Currently stubs |
+| Swarm / Supervisor modes | 📋 Planned | Return a clear "not implemented" error (no silent exit) |
 | Agent loop / ReAct planning | 📋 Planned | One-shot send-and-exit today |
 | Tool-use / function calling | 📋 Planned | The #1 capability gap |
 | Streaming responses | 📋 Planned | `stream` not yet wired |
@@ -356,18 +363,25 @@ and Vellum — by category:
 
 ## Roadmap
 
-See **[ROADMAP.md](ROADMAP.md)** for the full phased plan. Near-term priorities:
+See **[ROADMAP.md](ROADMAP.md)** for the full phased plan and the
+[feature gap analysis](ROADMAP.md#features-required-to-become-the-preferred-alternative)
+versus the field.
 
-**v0.2 — make the build honest & green:** commit `Cargo.lock` (unblocks `--locked`
-in CI/Docker), fix the multi-arch Docker cross-linker, verify the downloaded
-RavenFabric agent, decide/implement `--exec`, make swarm/supervisor fail loudly,
-and expand Rust unit/integration coverage.
+**✅ v0.2 — build honest & green (complete):** `Cargo.lock` committed (reproducible
+`--locked` builds), multi-arch Docker cross-linker fixed, RavenFabric agent
+checksum-verified, `--exec` wired, swarm/supervisor fail loudly, version synced, and
+a 100+-test `mockito`-backed Rust suite.
 
 **v0.3 — a real agent:** the perceive→plan→act→observe loop, interactive REPL,
 conversation memory, and streaming.
 
-**v0.4 — tools & safety:** function-calling, built-in tools behind a deny-by-default
-policy, sandboxing, and a tamper-evident audit log.
+**v0.4 — tools, safety & MCP:** function-calling, built-in tools behind a
+deny-by-default policy, sandboxing, a tamper-evident audit log, and **MCP (client +
+server)** — the single highest-leverage step to tap the entire tool ecosystem.
+
+**The five that matter most** toward being *preferred*: MCP (v0.4) · agent loop +
+tools + sandbox (v0.3–v0.4) · local-first security model (v0.4) · async/background +
+scheduling (v0.7) · RavenFabric distributed execution (v0.6).
 
 ## License
 

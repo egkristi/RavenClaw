@@ -6,7 +6,9 @@ All notable changes to RavenClaw will be documented in this file.
 
 ### Added
 - `--exec` mode now fully wired — one-shot command execution with response printed to stdout
-- Comprehensive Rust unit tests: 71 tests across all modules (was 3)
+- Comprehensive Rust unit tests: 111 tests across all modules (was 3)
+- `serial_test` crate for serializing env-dependent tests to prevent env var leakage
+- `Config::load()` now safely handles `RAVENCLAW__LLMS` env var by saving/restoring it around serde deserialization
 - Manual `Default` implementations for `RavenFabricConfig`, `SecurityConfig`, and `RuntimeConfig` matching serde defaults
 - CLI `--version` now uses `env!("CARGO_PKG_VERSION")` instead of hardcoded string
 - Test coverage for config validation, LLM client creation, error types, CLI argument parsing, and agent stubs

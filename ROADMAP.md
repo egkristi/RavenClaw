@@ -230,12 +230,15 @@ Agency with guardrails — the security differentiator.
 
 - [ ] **Tool / function-calling abstraction** (provider-agnostic schema + registry).
 - [ ] **Built-in tools**: shell exec, file read/write, web fetch, code analysis — each behind a capability flag.
+- [ ] **MCP — client *and* server** *(NEW — highest-leverage)* — consume any Model Context Protocol tool/server, and expose RavenClaw itself as an MCP server. The industry tool standard (Anthropic, OpenAI, Google, Microsoft, Salesforce).
+- [ ] **Web search + headless browser tool** *(NEW)* — search, navigate, extract, and fill forms (beyond simple web fetch).
 - [ ] **Deny-by-default policy** (command / path / host allow-lists), à la RavenFabric's RPCPolicy.
 - [ ] **Sandboxed execution** (workdir jail, resource limits, timeouts).
 - [ ] **Wire `audit_log`** — structured, HMAC-chained, tamper-evident trail of every tool call.
 - [ ] **Wire `zeroize`** for secret material; automatic secret/PII redaction in logs.
 - [ ] **Honor `token_lifetime_secs`** for any issued credentials.
 - [ ] **Prompt-injection defense** — instruction-boundary enforcement, output schema validation.
+- [ ] **Human-in-the-loop approvals** *(NEW)* — configurable approval gates for sensitive tool calls (allow / deny / ask).
 
 **Exit criteria:** an agent runs tools, but only those allowed by policy, with a complete audit log.
 
@@ -246,6 +249,8 @@ Agency with guardrails — the security differentiator.
 - [ ] **Resilience**: retries with exponential backoff + jitter; per-provider circuit breaker.
 - [ ] **Token accounting & per-run budgets/limits.**
 - [ ] **Native Anthropic provider**; embeddings endpoint; tool-calling parity across providers.
+- [ ] **Multi-modal input** *(NEW)* — images, PDFs, and documents as agent input.
+- [ ] **Skill / plugin system** *(NEW — pulled from v0.9)* — portable capability bundles (instructions + scripts + resources), à la Claude Agent Skills, with progressive disclosure.
 
 **Exit criteria:** a single run transparently fails over between providers and respects a token budget.
 
@@ -255,6 +260,7 @@ Agency with guardrails — the security differentiator.
 - [ ] **Swarm mode** — coordinated agents with a shared blackboard/state; per-subtask model selection.
 - [ ] **RavenFabric integration** — secure E2E remote command execution + mesh coordination (the headline capability).
 - [ ] **Agent communication** — structured message passing; conflict resolution across agents.
+- [ ] **Connectors / integrations** *(NEW)* — OAuth connectors for Google Drive, M365, Slack, GitHub, Notion (acts as the user, not a shared service account).
 
 **Exit criteria:** a supervisor decomposes a task across ≥3 sub-agents over RavenFabric and aggregates results.
 
@@ -265,6 +271,9 @@ Agency with guardrails — the security differentiator.
 - [ ] **OpenTelemetry tracing** (opt-in, self-hosted collector, correlation IDs).
 - [ ] **Graceful shutdown**, signal handling, `health_interval_secs` honored.
 - [ ] **Helm chart**; systemd unit; optional self-update with rollback.
+- [ ] **Async / long-horizon background runs** *(NEW)* — assign-and-walk-away background execution, resumable across restarts (matches Manus's headline UX).
+- [ ] **Scheduling & triggers** *(NEW — moved from v0.9)* — cron, webhook, and file-watch activation for proactive 24/7 agents.
+- [ ] **Eval harness + run inspection** *(NEW)* — golden-task evals, assertions on intermediate steps, and replayable run traces.
 
 **Exit criteria:** RavenClaw runs as a stable long-lived workload with green probes and exported metrics.
 
@@ -278,16 +287,16 @@ Maps to the commercial tier in [LICENSING.md](LICENSING.md).
 - [ ] **Multi-level audit logging** — levels (`off`/`basic`/`detailed`/`debug`), formats (JSON/CEF/LEEF/Syslog), shipping sinks, integrity chaining.
 - [ ] **Compliance presets & reporting** (SOC2, ISO 27001, HIPAA, GDPR, PCI-DSS).
 - [ ] **Air-gap / offline licensing**; runtime feature-flag gating.
+- [ ] **Output artifacts & reporting** *(NEW)* — generate documents, spreadsheets, slides, and sites via the skill system (v0.5); underpins compliance and executive reporting.
 
 ### v0.9 — Hardening, ecosystem, advanced reasoning 💎
 
 - [ ] **Threat model + external security review.**
 - [ ] **Fuzzing** (`cargo fuzz`) + property tests for config/policy parsers.
-- [ ] **Plugin & skill system** (Rust or WASM); MCP (Model Context Protocol) support.
+- [ ] **Skill/plugin marketplace + WASM sandboxing** for third-party extensions (core MCP ships in v0.4, the skill system in v0.5).
 - [ ] **SDKs** (Python/TS) and a documentation site.
 - [ ] **Advanced reasoning** — tree-of-thought, self-reflection, uncertainty estimation / ask-for-help.
 - [ ] **Memory tiers** — episodic, semantic (local embeddings), procedural.
-- [ ] **Proactive operation** — scheduling, event/webhook triggers, file watchers.
 
 ### v1.0 — Simply the best 🏆
 

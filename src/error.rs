@@ -127,4 +127,69 @@ mod tests {
         fn check_sync<T: Sync>() {}
         check_sync::<RavenClawError>();
     }
+
+    #[test]
+    fn test_from_llm_error_conversion() {
+        let llm_err = crate::llm::LLMError::RequestFailed("timeout".to_string());
+        let err: RavenClawError = llm_err.into();
+        assert!(format!("{}", err).contains("LLM error"));
+        assert!(format!("{}", err).contains("timeout"));
+    }
+
+    #[test]
+    fn test_from_config_error_conversion() {
+        let cfg_err = crate::config::ConfigError::ValidationError("bad config".to_string());
+        let err: RavenClawError = cfg_err.into();
+        assert!(format!("{}", err).contains("Configuration error"));
+        assert!(format!("{}", err).contains("bad config"));
+    }
+
+    #[test]
+    fn test_from_io_error_conversion() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "permission denied");
+        let err: RavenClawError = io_err.into();
+        assert!(format!("{}", err).contains("IO error"));
+        assert!(format!("{}", err).contains("permission denied"));
+    }
+
+    #[test]
+    fn test_error_source_chain() {
+        // RavenClawError doesn't implement std::error::Error::source() directly
+        // for all variants, but the Display impl should contain the inner message
+        let inner = crate::llm::LLMError::AuthFailed;
+        let err = RavenClawError::Llm(inner);
+        let display = format!("{}", err);
+        assert!(display.contains("Authentication failed"));
+    }
+
+    #[test]
+    fn test_ravenfabric_error_construction() {
+        let err = RavenClawError::RavenFabric("connection timeout".to_string());
+        assert_eq!(format!("{}", err), "RavenFabric error: connection timeout");
+    }
+
+    #[test]
+    fn test_security_violation_construction() {
+        let err = RavenClawError::SecurityViolation("invalid token".to_string());
+        assert_eq!(format!("{}", err), "Security violation: invalid token");
+    }
+
+    #[test]
+    #[allow(clippy::unnecessary_literal_unwrap)]
+    fn test_result_type_alias_ok() {
+        let result: Result<i32> = Ok(42);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[test]
+    #[allow(clippy::unnecessary_literal_unwrap)]
+    fn test_result_type_alias_err() {
+        let result: Result<i32> = Err(RavenClawError::CommandExecution("fail".to_string()));
+        assert!(result.is_err());
+        assert_eq!(
+            format!("{}", result.unwrap_err()),
+            "Command execution failed: fail"
+        );
+    }
 }

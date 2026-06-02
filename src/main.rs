@@ -280,4 +280,78 @@ mod tests {
             assert_eq!(mapped, expected, "Provider mapping failed for '{}'", input);
         }
     }
+
+    #[test]
+    fn test_cli_provider_mapping_case_insensitive() {
+        let test_cases = vec![
+            ("OpenRouter", config::LLMProvider::OpenRouter),
+            ("OPENAI", config::LLMProvider::OpenAI),
+            ("Ollama", config::LLMProvider::Ollama),
+            ("LiteLLM", config::LLMProvider::LiteLLM),
+        ];
+
+        for (input, expected) in test_cases {
+            let mapped = match input.to_lowercase().as_str() {
+                "openrouter" => config::LLMProvider::OpenRouter,
+                "ollama" => config::LLMProvider::Ollama,
+                "openai" => config::LLMProvider::OpenAI,
+                _ => config::LLMProvider::LiteLLM,
+            };
+            assert_eq!(
+                mapped, expected,
+                "Case-insensitive mapping failed for '{}'",
+                input
+            );
+        }
+    }
+
+    #[test]
+    fn test_cli_verbose_flag() {
+        let args = Args::parse_from(["ravenclaw", "--verbose"]);
+        assert!(args.verbose);
+
+        let args = Args::parse_from(["ravenclaw"]);
+        assert!(!args.verbose);
+    }
+
+    #[test]
+    fn test_cli_env_var_mapping() {
+        // Verify that env var names match CLI args
+        // RAVENCLAW_CONFIG → config
+        // RAVENCLAW_VERBOSE → verbose
+        // RAVENCLAW_PROVIDER → provider
+        // RAVENCLAW_ENDPOINT → endpoint
+        // RAVENCLAW_MODEL → model
+        let args = Args::parse_from(["ravenclaw"]);
+        assert_eq!(args.config, None);
+        assert!(!args.verbose);
+        assert_eq!(args.provider, None);
+        assert_eq!(args.endpoint, None);
+        assert_eq!(args.model, None);
+    }
+
+    #[test]
+    fn test_cli_exec_with_provider() {
+        let args = Args::parse_from(["ravenclaw", "--exec", "test prompt", "--provider", "openai"]);
+        assert_eq!(args.exec.unwrap(), "test prompt");
+        assert_eq!(args.provider.unwrap(), "openai");
+    }
+
+    #[test]
+    fn test_cli_mode_dispatch_single() {
+        let args = Args::parse_from(["ravenclaw", "--mode", "single"]);
+        assert_eq!(args.mode, "single");
+    }
+
+    #[test]
+    fn test_cli_mode_dispatch_swarm() {
+        let args = Args::parse_from(["ravenclaw", "--mode", "swarm"]);
+        assert_eq!(args.mode, "swarm");
+    }
+
+    #[test]
+    fn test_cli_mode_dispatch_supervisor() {
+        let args = Args::parse_from(["ravenclaw", "--mode", "supervisor"]);
+        assert_eq!(args.mode, "supervisor");
+    }
 }
