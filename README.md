@@ -1,55 +1,82 @@
-# 🐦‍⬛ RavenClaw — Lightweight, Secure Rust Agent Framework
+# 🐦‍⬛ RavenClaw — The Ultimate AI Agentic Worker
 
-**The smallest, fastest, most secure agent framework. Built in Rust.**
+**Secure · Small · Efficient · Robust · Simple. Built in Rust.**
 
-[![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSES/AGPLv3.txt)
-[![Build](https://img.shields.io/badge/build-verified-brightgreen)](VERIFICATION.md)
-[![Binary Size](https://img.shields.io/badge/binary-3MB-ff69b4)]()
-[![Startup Time](https://img.shields.io/badge/startup-7ms-success)]()
+[![License](https://img.shields.io/badge/license-AGPLv3%20%2B%20Commercial-blue.svg)](LICENSING.md)
+[![CI](https://github.com/egkristi/RavenClaw/actions/workflows/build.yml/badge.svg)](.github/workflows/build.yml)
+[![Verification](https://img.shields.io/badge/verification-94%20checks-brightgreen)](VERIFICATION.md)
+[![Binary](https://img.shields.io/badge/binary-~3MB-blue)]()
+[![Status](https://img.shields.io/badge/status-pre--alpha-orange)](ROADMAP.md)
 
-RavenClaw is a lightweight, secure Rust agent framework with multi-provider LLM support. It runs as a single binary with zero runtime dependencies — no Python, no Node, no JVM.
+RavenClaw is a lightweight, secure Rust agent framework with multi-provider LLM
+support. One static binary, zero runtime dependencies — no Python, no Node, no JVM.
 
-| Performance | Security | Providers | Deployment |
+> **Status: Pre-Alpha (v0.1.0).** The provider layer, deployment tooling, and the
+> verification + supply-chain pipeline work today. The agent loop, tool-use, and
+> swarm/supervisor modes are on the [roadmap](ROADMAP.md). This README marks
+> ✅ built vs. 📋 planned — honestly. Trust is a feature; we don't inflate it.
+
+| Footprint | Security | Providers | Deployment |
 |---|---|---|---|
-| **~3MB binary** | **Zero CVEs** | **4 providers** | **Binary + Docker + K8s** |
-| **~7ms startup** | **Memory-safe Rust** | **Multi-model** | **94 verified tests** |
+| **~3 MB binary** | **Memory-safe Rust** | **4 providers** | **Binary · Docker · K8s** |
+| **0 runtime deps** | **Signed images + SBOM** | **Multi-model** | **94-check verification suite** |
+
+---
+
+## Vision
+
+RavenClaw aims to be the **ultimate AI agentic assistant and worker** — and the
+**preferred alternative** to the field: Nemoclaw, Hermes Agent, TrustClaw, ZeroClaw,
+PicoClaw, NanoClaw, Claude Cowork, Manus, Perplexity Computer, Kimi Claw, and Vellum.
+
+We don't aim to win by out-featuring them. We win by refusing to compromise on five
+pillars at once:
+
+- 🔒 **Secure** — memory-safe Rust (`unsafe` forbidden), fail-closed, no creds in config, verified supply chain.
+- 🪶 **Small** — one static binary (~3 MB), distroless image, lean dependency tree.
+- ⚡ **Efficient** — native performance, low memory, fast cold start, streaming everywhere.
+- 🛡️ **Robust** — graceful degradation, provider fallback, deterministic config, verified across 4 deployment targets.
+- ✨ **Simple** — one command to run, sensible defaults, no external services required for single-agent use.
+
+See the **[ROADMAP](ROADMAP.md)** for how we get from here to there.
+
+---
 
 ## Why RavenClaw?
 
-### Unmatched Performance
-- **~3MB** stripped binary — smaller than a JPEG photo
-- **~7ms** cold startup — 40x faster than Node.js agents
-- **~6ms** config parsing — instant-on from any environment
-- **Zero runtime dependencies** — no Python, no Node, no JVM
+### Small & efficient
 
-### Security by Design
-- **Memory-safe Rust** — entire class of memory corruption bugs eliminated at compile time
-- **Fail-closed architecture** — every permission denied by default
-- **No credentials in config** — env vars and K8s Secrets only
-- **Read-only root filesystem** — container can't modify itself
-- **Non-root user** — dropped capabilities, no privilege escalation
-- **Audit logging** — every action recorded by default
+- **~3 MB** stripped release binary (measured) — no interpreter, no runtime image baggage.
+- **Single static binary** — no Python, no Node, no JVM, zero runtime dependencies.
+- Native Rust with `lto` + `panic=abort`. Design targets (benchmarked toward v1.0 via the [verification suite](VERIFICATION.md)): **< 50 ms** cold start, **< 20 MB** RSS, **< 15 MB** binary across all targets.
 
-  > **Compare:** OpenClaw had **15+ CVEs in 2026 alone** — sandbox escapes, prompt injection, path traversal, auth bypass, symlink attacks. RavenClaw's Rust foundation makes entire vulnerability classes impossible.
+### Secure & trustworthy
 
-### Multi-Provider, Multi-Model
-- **LiteLLM** — OpenAI-compatible proxy with 100+ models
-- **OpenAI** — Native GPT-4o, o-series, and more
-- **OpenRouter** — Unified API for 200+ models
-- **Ollama** — Local, private, air-gapped models
-- **Multi-model mode** — Run agents across multiple providers simultaneously
+- **Memory-safe Rust** — whole classes of memory-corruption bugs eliminated at compile time.
+- **No credentials in config** — environment variables and Kubernetes Secrets only.
+- **Hardened containers** — distroless, non-root, read-only root filesystem, dropped capabilities, seccomp.
+- **Verified supply chain** — multi-arch images signed with **Cosign**, **SBOM** (Syft) and build **provenance** attestation, plus **CodeQL**, **cargo-audit**, **cargo-deny**, **Trivy**, **Hadolint**, **Kubescape**, and **OSSF Scorecard** in CI.
+- **TLS enforced** by default for non-local endpoints.
+- *(Planned: deny-by-default tool policy, sandboxed tool execution, and a tamper-evident audit log — see roadmap v0.4. The `security.audit_log` config surface exists today but is not yet enforced.)*
 
-### Battle-Tested
-- **94 automated tests** across 8 modules and 4 deployment targets
-- **25+ LLM response quality tests** per release (all available models)
-- **Binary integrity checks** — no debug symbols, no hardcoded secrets
-- **Performance benchmarks** — startup (~7ms), config load (~6ms), LLM response (~900ms)
-- **Full verification suite** — local, Docker, Linux cross-compile, Kubernetes
-- **Modular test scripts** — each module runs independently
+### Multi-provider, multi-model
+
+- **LiteLLM** — OpenAI-compatible proxy fronting 100+ models.
+- **OpenAI** — native GPT-4o, o-series, and more.
+- **OpenRouter** — unified API for many hosted models.
+- **Ollama** — local, private, air-gapped models.
+- **Multi-model mode** — configure several providers at once (basic round-robin today; intelligent routing + fallback on the roadmap).
+
+### Verified across every target
+
+- A **94-check verification suite** (`scripts/verify.sh`) spanning **8 modules** across **4 deployment targets** — local binary, Docker, cross-compiled Linux, and Kubernetes — including security and performance checks. Each module runs independently; results are logged.
+- *Note:* these are **system/integration checks** (shell-orchestrated, requiring live services such as LiteLLM/Docker/kubectl). Rust-level unit tests are currently minimal and are being expanded — see [ROADMAP](ROADMAP.md).
+
+---
 
 ## Quick Start
 
-### 30 Seconds to Your First Agent
+### 30 seconds to your first agent
 
 ```bash
 # Build from source (requires Rust)
@@ -63,7 +90,7 @@ export RAVENCLAW__LLM__ENDPOINT="http://localhost:4000"
 ./target/release/ravenclaw --mode single
 ```
 
-> **Note:** Pre-built binaries are planned for the v0.1.0 release. See [ROADMAP.md](ROADMAP.md) for details.
+> **Note:** Pre-built binaries are wired in CI and publish on tagged releases; none tagged yet. Build from source for now. See [ROADMAP.md](ROADMAP.md).
 
 ### Docker
 
@@ -89,9 +116,13 @@ kubectl -n ravenclaw get pods
 kubectl -n ravenclaw logs -l app.kubernetes.io/name=ravenclaw
 ```
 
+> Single mode currently performs one request and exits. A long-running **server
+> mode** with `/health` `/ready` `/metrics` is on the roadmap (v0.7); until then,
+> prefer the `deployment-test.yaml`/Job-style manifest for k8s smoke tests.
+
 ## Configuration
 
-### Environment Variables
+### Environment variables
 
 | Variable | Description | Default |
 |---|---|---|
@@ -105,7 +136,7 @@ kubectl -n ravenclaw logs -l app.kubernetes.io/name=ravenclaw
 | `RAVENCLAW__RUNTIME__MAX_AGENTS` | Max concurrent agents | `10` |
 | `RUST_LOG` | Log level | `info` |
 
-### Single Provider Mode
+### Single provider mode
 
 **LiteLLM:**
 ```toml
@@ -139,9 +170,9 @@ provider = "openai"
 model = "gpt-4o"
 ```
 
-### Multi-Model Mode
+### Multi-model mode
 
-Run agents across multiple providers simultaneously (basic round-robin routing):
+Configure several providers at once (basic round-robin today):
 
 ```toml
 [[llms]]
@@ -158,7 +189,7 @@ provider = "openai"
 model = "gpt-4o"
 ```
 
-### Full Config Example
+### Full config example
 
 ```toml
 [llm]
@@ -167,7 +198,7 @@ endpoint = "http://litellm:4000"
 model = "gpt-4o-mini"
 timeout_secs = 30
 
-# Optional: RavenFabric for swarm/supervisor coordination
+# Optional: RavenFabric for swarm/supervisor coordination (integration on roadmap)
 # [ravenfabric]
 # endpoint = "http://ravenfabric:8080"
 # remote_exec = true
@@ -175,8 +206,8 @@ timeout_secs = 30
 
 [security]
 require_tls = true
-token_lifetime_secs = 3600
-audit_log = true
+token_lifetime_secs = 3600   # surface present; enforcement on roadmap (v0.4)
+audit_log = true             # surface present; enforcement on roadmap (v0.4)
 
 [runtime]
 workdir = "/workspace"
@@ -184,78 +215,49 @@ max_agents = 10
 health_interval_secs = 60
 ```
 
-## Agent Modes
+## Agent modes
 
 | Mode | Status | Description |
 |---|---|---|
-| `single` | ✅ **Working** | Sends prompt to LLM, logs response (one-shot, no agent loop) |
+| `single` | ✅ **Working** | Sends prompt to LLM, logs response (one-shot, no agent loop yet) |
 | `single` (multi-model) | ✅ **Working** | Iterates all configured providers, logs each response |
-| `swarm` | ❌ Stub | Warns "not yet implemented" and exits — see [ROADMAP.md](ROADMAP.md) |
-| `supervisor` | ❌ Stub | Warns "not yet implemented" and exits — see [ROADMAP.md](ROADMAP.md) |
+| `swarm` | 📋 Planned | Currently a stub that warns and exits — see [ROADMAP.md](ROADMAP.md) |
+| `supervisor` | 📋 Planned | Currently a stub that warns and exits — see [ROADMAP.md](ROADMAP.md) |
 
-## Security
-
-RavenClaw takes security seriously — unlike competitors who treat it as an afterthought.
-
-| Feature | RavenClaw | OpenClaw | OpenManus | Vellum |
-|---|---|---|---|---|
-| Memory-safe language | ✅ Rust | ❌ TypeScript/Node | ❌ Python | ❌ TypeScript |
-| CVEs in 2026 | **0** | **15+** | N/A | N/A |
-| No credentials in config | ✅ | ✅ | ❌ | ❌ |
-| Read-only container | ✅ | ❌ | ❌ | ❌ |
-| Non-root container | ✅ | ❌ | ❌ | ❌ |
-| Audit logging | ✅ (config option) | ✅ | ❌ | ✅ |
-| Prompt injection defense | ❌ Planned | ❌ (bypassed) | ❌ | Partial |
-| Agent loop / ReAct | ❌ Planned | ✅ | ✅ | ✅ |
-| Tool-use / function calling | ❌ Planned | ✅ | ✅ | ✅ |
-| Streaming responses | ❌ Planned | ✅ | ✅ | ✅ |
-| Conversation memory | ❌ Planned | ✅ | ❌ | ✅ |
-
-## Building from Source
+## Building from source
 
 ### Prerequisites
 
-- [Rust](https://rustup.rs/) 1.82+
+- [Rust](https://rustup.rs/) 1.86+
 - For Linux cross-compilation on macOS: `brew install FiloSottile/musl-cross/musl-cross`
 
-### Build for Host
+### Build for host
 
 ```bash
 git clone https://github.com/egkristi/RavenClaw
 cd RavenClaw
 
-# Build release for current platform
-cargo build --release
-
-# Run tests
-cargo test
-
-# Build Docker image
+cargo build --release      # release build for current platform
+cargo test                 # unit tests
+./scripts/verify.sh        # full 94-check verification suite (needs LiteLLM/Docker/kubectl)
 docker build -t ravenclaw:latest .
 ```
 
-### Cross-Compile for All Architectures
+### Cross-compile for all architectures
 
 ```bash
-# Install cross-compilation targets
 rustup target add \
-    x86_64-apple-darwin \
-    aarch64-apple-darwin \
-    x86_64-unknown-linux-gnu \
-    aarch64-unknown-linux-gnu \
+    x86_64-apple-darwin aarch64-apple-darwin \
+    x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu \
     x86_64-unknown-linux-musl
 
-# Build for all targets
-./scripts/build.sh --all
-
-# Build for a specific target
-./scripts/build.sh --target aarch64-unknown-linux-gnu
+./scripts/build.sh --all                                   # all targets
+./scripts/build.sh --target aarch64-unknown-linux-gnu      # one target
 ```
 
-### Multi-Arch Docker Image
+### Multi-arch Docker image
 
 ```bash
-# Build and push multi-arch Docker image (linux/amd64 + linux/arm64)
 docker buildx build \
     --platform linux/amd64,linux/arm64 \
     -t ghcr.io/egkristi/ravenclaw:latest \
@@ -264,121 +266,108 @@ docker buildx build \
 
 ## Downloads
 
-> **Note:** Pre-built binaries are planned for the v0.1.0 release. Currently, you must build from source. See [ROADMAP.md](ROADMAP.md) for release timeline.
+> **Note:** Pre-built binaries publish automatically on tagged releases (CI is wired
+> for it); none tagged yet. Build from source meanwhile.
 
-The build script supports cross-compilation for these architectures:
+| Architecture | Target Triple |
+|---|---|
+| Apple Silicon (M1+) | `aarch64-apple-darwin` |
+| Intel Mac | `x86_64-apple-darwin` |
+| Linux ARM64 | `aarch64-unknown-linux-gnu` |
+| Linux x86_64 (glibc) | `x86_64-unknown-linux-gnu` |
+| Linux x86_64 (musl/static) | `x86_64-unknown-linux-musl` |
 
-| Architecture | Target Triple | Build Command |
-|---|---|---|
-| Apple Silicon (M1+) | `aarch64-apple-darwin` | `cargo build --release --target aarch64-apple-darwin` |
-| Intel Mac | `x86_64-apple-darwin` | `cargo build --release --target x86_64-apple-darwin` |
-| Linux ARM64 | `aarch64-unknown-linux-gnu` | `cargo build --release --target aarch64-unknown-linux-gnu` |
-| Linux x86_64 (glibc) | `x86_64-unknown-linux-gnu` | `cargo build --release --target x86_64-unknown-linux-gnu` |
-| Linux x86_64 (musl/static) | `x86_64-unknown-linux-musl` | `cargo build --release --target x86_64-unknown-linux-musl` |
-
-Docker images support both `linux/amd64` and `linux/arm64` platforms.
-
-```bash
-# Build for all targets
-./scripts/build.sh --all
-
-# Build multi-arch Docker image
-docker buildx build --platform linux/amd64,linux/arm64 -t ravenclaw:latest .
-```
+Container images target both `linux/amd64` and `linux/arm64`.
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────┐
 │                    RavenClaw Agent                    │
-│  ┌──────────────────────────────────────────────┐   │
-│  │         Single Mode (✅ Working)              │   │
-│  │    Sends prompt → LLM → logs response        │   │
-│  │    (one-shot, no agent loop yet)             │   │
-│  └─────────────────────┬────────────────────────┘   │
-│                        │                             │
-│  ┌─────────────────────┴─────────────────────────┐   │
-│  │         LLM Provider Abstraction Layer        │   │
-│  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ │   │
-│  │  │LiteLLM │ │ OpenAI │ │OpenRtr │ │ Ollama │ │   │
-│  │  └────────┘ └────────┘ └────────┘ └────────┘ │   │
-│  └─────────────────────┬─────────────────────────┘   │
-│                        │                             │
-│  ┌─────────────────────┴─────────────────────────┐   │
-│  │              Security Layer                    │   │
-│  │  TLS · Audit · Env-only secrets · Non-root    │   │
-│  └─────────────────────────────────────────────────┘   │
+│  ┌──────────────────────────────────────────────┐    │
+│  │         Single Mode (✅ Working)               │    │
+│  │    Sends prompt → LLM → logs response          │    │
+│  │    (one-shot; agent loop on roadmap)           │    │
+│  └─────────────────────┬────────────────────────┘    │
+│                        │                              │
+│  ┌─────────────────────┴─────────────────────────┐    │
+│  │         LLM Provider Abstraction Layer         │    │
+│  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐  │    │
+│  │  │LiteLLM │ │ OpenAI │ │OpenRtr │ │ Ollama │  │    │
+│  │  └────────┘ └────────┘ └────────┘ └────────┘  │    │
+│  └─────────────────────┬─────────────────────────┘    │
+│                        │                              │
+│  ┌─────────────────────┴─────────────────────────┐    │
+│  │              Security Layer                    │    │
+│  │  TLS · env-only secrets · non-root · RBAC      │    │
+│  └────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────┘
          │                          │
          ▼                          ▼
 ┌─────────────────┐      ┌──────────────────────┐
 │  RavenFabric    │      │   Deployment Targets  │
-│  (optional)     │      │  Binary · Docker · K8s │
+│  (planned)      │      │  Binary · Docker · K8s │
 └─────────────────┘      └──────────────────────┘
 ```
 
-### What's Implemented vs. What's Planned
+### What's implemented vs. planned
 
 | Component | Status | Details |
 |---|---|---|
-| Single agent (single-provider) | ✅ Working | Sends prompt, logs response |
-| Single agent (multi-model) | ✅ Working | Iterates all providers, logs each response |
-| LLM providers (4) | ✅ Working | LiteLLM, OpenAI, OpenRouter, Ollama |
-| CLI & env-var overrides | ✅ Working | `--provider`, `--endpoint`, `--model` |
+| Single agent (single + multi-model) | ✅ Working | Sends prompt(s), logs response(s) |
+| LLM providers (4) | ✅ Working | LiteLLM, OpenAI, OpenRouter, Ollama (unified trait) |
+| CLI & env-var overrides | ✅ Working | `--provider`, `--endpoint`, `--model`; layered TOML→env→flags |
 | Config validation | ✅ Working | TLS enforcement, endpoint checks |
-| Container security | ✅ Working | Non-root, read-only FS, dropped caps |
-| Verification suite | ✅ Working | 94 tests, 8 modules, 4 targets |
-| Multi-model routing | Partial | Round-robin `next_client()` only, no intelligent routing |
-| `--exec` mode | ❌ Dead code | CLI arg parsed but never used |
-| Swarm mode | ❌ Stub | Warns "not yet implemented", exits 0 |
-| Supervisor mode | ❌ Stub | Warns "not yet implemented", exits 0 |
-| Tool-use / function calling | ❌ Not implemented | Agent cannot call tools |
-| Agent loop / ReAct planning | ❌ Not implemented | One-shot send-and-exit |
-| Streaming responses | ❌ Not implemented | `stream: None` hardcoded |
-| Conversation memory | ❌ Not implemented | In-memory only, lost on exit |
-| RavenFabric integration | Partial | Config struct exists, binary included in container, integration not yet wired |
-| GitHub Actions CI/CD | ✅ Implemented | fmt + clippy + test, 5-target builds, multi-arch images, Cosign + SBOM + provenance + Trivy, crates.io publish, releases |
-| Security scanning | ✅ Implemented | CodeQL, cargo-audit, cargo-deny, Trivy (FS + config), Hadolint, Kubescape, OSSF Scorecard, dependency review |
-| Pre-built binaries | 📋 Wired, untagged | CI produces them on tag; none released yet |
+| Container & K8s security | ✅ Working | Distroless, non-root, read-only FS, dropped caps, seccomp, RBAC |
+| CI/CD pipeline | ✅ Implemented | fmt + clippy + test, 5-target builds, multi-arch images, Cosign + SBOM + provenance + Trivy, crates.io publish, releases |
+| Security scanning | ✅ Implemented | CodeQL, cargo-audit, cargo-deny, Trivy (FS + config), Hadolint, Kubescape, OSSF Scorecard |
+| Verification suite | ✅ Working | 94 system/integration checks · 8 modules · 4 targets (`scripts/verify.sh`) |
+| Rust unit tests | ⚠️ Minimal | 3 smoke-level tests; `mockito` unused — expanding (see roadmap) |
+| Multi-model routing | ⚠️ Partial | `next_client()` round-robin exists but is not yet wired into a strategy |
+| RavenFabric integration | ⚠️ Partial | Config + container binary present; runtime wiring pending |
+| `--exec` one-shot mode | 📋 Planned | CLI arg parsed but not yet used |
+| Swarm / Supervisor modes | 📋 Planned | Currently stubs |
+| Agent loop / ReAct planning | 📋 Planned | One-shot send-and-exit today |
+| Tool-use / function calling | 📋 Planned | The #1 capability gap |
+| Streaming responses | 📋 Planned | `stream` not yet wired |
+| Conversation memory | 📋 Planned | In-memory only, lost on exit |
+
+## How RavenClaw intends to win
+
+RavenClaw is positioned against the field — Nemoclaw, Hermes Agent, TrustClaw,
+ZeroClaw, PicoClaw, NanoClaw, Claude Cowork, Manus, Perplexity Computer, Kimi Claw,
+and Vellum — by category:
+
+- **vs. cloud / hosted assistants** (Claude Cowork, Manus, Perplexity Computer, Kimi Claw): RavenClaw is **self-hostable, offline-capable, and source-available** under AGPLv3. Your data and tool calls never leave infrastructure you control — and there is no phone-home.
+- **vs. minimal agent runtimes** (ZeroClaw, PicoClaw, NanoClaw, TrustClaw): RavenClaw matches their footprint while adding a real **security model** (memory-safe core, verified supply chain, and — on the roadmap — deny-by-default tool policy, sandboxing, and an audit log) plus **multi-provider** routing.
+- **vs. SDK / platform plays** (Vellum, Hermes Agent, Nemoclaw): RavenClaw is a **single dependency-light binary**, not a service you rent or a framework you marry. Embed it, ship it, forget it.
+
+| Our commitment | How we back it |
+|---|---|
+| Memory-safe core | Rust with `unsafe` forbidden |
+| Tiny footprint | ~3 MB binary, distroless image, 0 runtime deps |
+| Trustworthy releases | Cosign signing · SBOM · provenance · CodeQL · Trivy · OSSF Scorecard |
+| Runs anywhere, privately | Self-hostable, air-gappable, no telemetry |
+| Honest about status | ✅/📋 markers everywhere; benchmarks published, not asserted |
+
+> Where we intend to lead — measurably, by v1.0: smallest footprint in class,
+> sub-50 ms cold start, zero known CVEs, fully self-hostable, signed +
+> SBOM-attested. These are targets we will benchmark and publish, not marketing.
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for the full prioritized feature plan.
+See **[ROADMAP.md](ROADMAP.md)** for the full phased plan. Near-term priorities:
 
-**Priority: Critical (v0.1.0 release blockers):**
-- Fix `--exec` dead code — CLI arg parsed but never used
-- Fix swarm/supervisor stubs — return clear errors instead of silent success
-- Commit `Cargo.lock` so `--locked` builds work in CI
-- Fix multi-arch Docker build (cross-linker config)
-- Ship pre-built binaries for all 5 target triples
-- Expand `cargo test` beyond 2 unit tests
-- Tag and release v0.1.0
+**v0.2 — make the build honest & green:** commit `Cargo.lock` (unblocks `--locked`
+in CI/Docker), fix the multi-arch Docker cross-linker, verify the downloaded
+RavenFabric agent, decide/implement `--exec`, make swarm/supervisor fail loudly,
+and expand Rust unit/integration coverage.
 
-**Priority: High (post-v0.1.0):**
-- Tool-use (function calling) — the #1 missing piece
-- Agent loop with ReAct-style planning
-- Streaming responses for interactive UX
-- Conversation memory across turns
-- Swarm & Supervisor mode implementations
-- Prompt injection defense
-- RavenFabric integration (config + container binary ready, runtime wiring pending)
+**v0.3 — a real agent:** the perceive→plan→act→observe loop, interactive REPL,
+conversation memory, and streaming.
 
-## Competitive Comparison
-
-| Metric | RavenClaw | OpenClaw | OpenManus | Vellum |
-|---|---|---|---|---|
-| **Language** | Rust | TypeScript | Python | TypeScript |
-| **Binary size** | **~3MB** | ~100MB+ | N/A (Python) | N/A (Bun) |
-| **Startup time** | **~7ms** | ~500ms+ | ~2s+ | ~1s+ |
-| **CVEs (2026)** | **0** | 15+ | N/A | N/A |
-| **Multi-provider** | ✅ 4 providers | Plugin-based | OpenAI-centric | ✅ |
-| **Agent loop / ReAct** | ❌ Planned | ✅ | ✅ | ✅ |
-| **Tool-use / function calling** | ❌ Planned | ✅ | ✅ | ✅ |
-| **Streaming responses** | ❌ Planned | ✅ | ✅ | ✅ |
-| **Conversation memory** | ❌ Planned | ✅ | ❌ | ✅ |
-| **Swarm mode** | ❌ Planned | Via plugins | Via Python | Via gateway |
-| **Verification tests** | **94** | Limited | Community | Internal |
-| **License** | AGPLv3 + Commercial | Proprietary? | MIT | MIT |
+**v0.4 — tools & safety:** function-calling, built-in tools behind a deny-by-default
+policy, sandboxing, and a tamper-evident audit log.
 
 ## License
 
@@ -401,4 +390,4 @@ All contributions require signing a Contributor License Agreement (CLA) — see 
 
 ---
 
-**RavenClaw** — Small. Sleek. Secure. Supreme. 🐦‍⬛
+**RavenClaw** — Secure · Small · Efficient · Robust · Simple. Simply the best. 🐦‍⬛

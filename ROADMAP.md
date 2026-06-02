@@ -37,7 +37,8 @@ can't be added without breaking one, it doesn't ship in core.
 | Container & K8s security | ✅ Working | Distroless, non-root, read-only FS, dropped caps, seccomp, RBAC |
 | CI/CD pipeline | ✅ Implemented | fmt + clippy `-D warnings` + test, 5-target builds, multi-arch images, **Cosign + SBOM + provenance + Trivy**, crates.io publish, releases — ⚠️ **red until `Cargo.lock` is committed** |
 | Security scanning | ✅ Implemented | CodeQL, cargo-audit, cargo-deny, cargo-outdated, cargo-udeps, Trivy (FS + config), Hadolint, Kubescape, OSSF Scorecard, dependency review — all SARIF results uploaded to GitHub Security tab |
-| Tests | ⚠️ Minimal | Constructor/smoke-level unit tests only; `mockito` declared but unused. *(No 90+ suite exists — that was aspirational.)* |
+| Verification suite | ✅ Working | 94 system/integration checks · 8 modules · 4 targets (`scripts/verify.sh`: local, Docker, Linux, K8s, security, performance, LLM-quality) — shell-orchestrated, requires live services |
+| Rust unit tests | ⚠️ Minimal | 3 smoke-level tests (constructors); `mockito` declared but unused — expand to cover request/response/error paths |
 | Multi-model routing | ⚠️ Partial | `next_client()` round-robin exists but is never called; no intelligent routing |
 | RavenFabric integration | ⚠️ Partial | Config struct exists, agent binary baked into the image; runtime integration not wired |
 | `--exec` one-shot mode | ❌ Dead code | CLI arg parsed but never read |
@@ -289,7 +290,7 @@ Concrete items carried from the current codebase (targeted for v0.2 unless noted
 4. **k8s Deployment runs a program that exits immediately** → needs server mode (v0.7) or a Job manifest meanwhile.
 5. **Client duplication** across LiteLLM/OpenAI/OpenRouter (`handle_response` ×4). *(v0.5)*
 6. **Dead/unwired code:** `--exec`, `next_client`, `rustls` + `zeroize` deps, and all `security`/`ravenfabric` config fields.
-7. **Shallow tests** — constructors only; `mockito` unused.
+7. **Rust unit tests are shallow** — only 3 constructor/smoke tests; `mockito` unused. (The 94-check `verify.sh` suite covers system/integration level but needs live services; add fast Rust-level request/response/error coverage.)
 8. **`.expect()` on HTTP client build** under `panic = "abort"` — aborts on a config hiccup.
 9. **Version literal duplicated** in `main.rs` instead of `CARGO_PKG_VERSION`.
 10. **README historically over-claimed** vs. implemented state — kept honest going forward via status markers.
