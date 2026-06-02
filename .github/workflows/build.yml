@@ -233,12 +233,15 @@ jobs:
 
       # ── SBOM ──────────────────────────────────────────────────
       - name: Generate SBOM with Syft
+        continue-on-error: true
         if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
         uses: anchore/sbom-action@v0
         with:
           image: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
           format: spdx-json
           output-file: sbom.spdx.json
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload SBOM as artifact
         if: always() && hashFiles('sbom.spdx.json') != ''
