@@ -6,7 +6,7 @@
 use crate::audit::{AuditEventType, AuditLog};
 use crate::config::Config;
 use crate::error::Result;
-use crate::llm::{ChatMessage, LLMProviderTrait, MultiModelManager};
+use crate::llm::{ChatMessage, Choice, LLMProviderTrait, MultiModelManager};
 use crate::policy::{Decision, PolicyEngine};
 use crate::sandbox::Sandbox;
 use crate::tools::{ToolCall, ToolRegistry, ToolResult};
@@ -168,11 +168,48 @@ pub async fn run_agent_loop(
             }
         };
 
-        let content = response
-            .choices
-            .first()
+        let first_choice = response.choices.first();
+        let content = first_choice
             .map(|c| c.message.content.clone())
             .unwrap_or_default();
+
+        // Check for structured tool calls first (OpenAI Tools format)
+        if config.enable_tools {
+            if let Some((tool_name, args)) = first_choice.and_then(parse_structured_tool_call) {
+                info!(tool = %tool_name, "Structured tool call detected");
+
+                // Execute tool with security
+                if let Some(tool_result) = execute_parsed_tool_call(
+                    tool_name,
+                    args,
+                    &registry,
+                    &policy_engine,
+                    &sandbox,
+                    &audit_log,
+                )
+                .await
+                {
+                    let observation = if tool_result.success {
+                        format!("OBSERVATION: {}", tool_result.output)
+                    } else {
+                        format!(
+                            "OBSERVATION: Tool failed with error: {}",
+                            tool_result.error.as_deref().unwrap_or("unknown error")
+                        )
+                    };
+
+                    memory.add_user_message(&observation);
+
+                    info!(
+                        iteration = iteration,
+                        tool = %tool_result.tool_name,
+                        success = tool_result.success,
+                        "Structured tool executed"
+                    );
+                    continue;
+                }
+            }
+        }
 
         // Check for completion signal
         if content.contains("FINAL:") {
@@ -199,7 +236,7 @@ pub async fn run_agent_loop(
             return Ok(final_response);
         }
 
-        // Execute tool calls if enabled
+        // Execute tool calls if enabled (legacy pattern-matching fallback)
         if config.enable_tools {
             if let Some(tool_result) = execute_tool_call_with_security(
                 &content,
@@ -269,26 +306,22 @@ pub async fn run_agent_loop(
     ))
 }
 
-/// Execute a tool call with security integration
+/// Execute a parsed tool call with security integration
 ///
 /// This function:
-/// 1. Parses the tool call from the LLM response
-/// 2. Checks the tool call against PolicyEngine
-/// 3. Logs the policy decision to AuditLog
-/// 4. Executes the tool (sandbox is applied at the tool implementation level for shell_exec)
-/// 5. Logs the result to AuditLog
-#[allow(unused_variables)]
-async fn execute_tool_call_with_security(
-    content: &str,
+/// 1. Checks the tool call against PolicyEngine
+/// 2. Logs the policy decision to AuditLog
+/// 3. Executes the tool (sandbox is applied at the tool implementation level for shell_exec)
+/// 4. Logs the result to AuditLog
+async fn execute_parsed_tool_call(
+    tool_name: String,
+    args: serde_json::Value,
     registry: &ToolRegistry,
     policy_engine: &PolicyEngine,
     sandbox: &Sandbox,
     audit_log: &AuditLog,
 ) -> Option<ToolResult> {
-    // Parse tool call from content
-    let (tool_name, args) = parse_tool_call(content)?;
-
-    info!(tool = %tool_name, "Parsing tool call");
+    info!(tool = %tool_name, "Executing parsed tool call");
 
     // Audit: tool call requested
     let _ = audit_log.tool_call(&tool_name, &args);
@@ -317,7 +350,7 @@ async fn execute_tool_call_with_security(
             let _ = audit_log.policy_decision(&tool_name, false, Some(reason));
             warn!(tool = %tool_name, reason = %reason, "Tool call denied by policy");
             return Some(ToolResult {
-                tool_name,
+                tool_name: tool_name.clone(),
                 success: false,
                 output: String::new(),
                 error: Some(format!("Policy denied: {}", reason)),
@@ -327,7 +360,7 @@ async fn execute_tool_call_with_security(
         }
     }
 
-    // Execute tool (sandbox is applied at the tool implementation level for shell_exec)
+    // Execute tool
     let tool_name_clone = tool_name.clone();
     let call = ToolCall {
         name: tool_name.clone(),
@@ -375,8 +408,43 @@ async fn execute_tool_call_with_security(
     Some(result)
 }
 
+/// Execute a tool call with security integration (legacy pattern-matching fallback)
+///
+/// This function:
+/// 1. Parses the tool call from the LLM response (legacy TOOL_CALL:/ARGS: format)
+/// 2. Checks the tool call against PolicyEngine
+/// 3. Logs the policy decision to AuditLog
+/// 4. Executes the tool (sandbox is applied at the tool implementation level for shell_exec)
+/// 5. Logs the result to AuditLog
+#[allow(unused_variables)]
+async fn execute_tool_call_with_security(
+    content: &str,
+    registry: &ToolRegistry,
+    policy_engine: &PolicyEngine,
+    sandbox: &Sandbox,
+    audit_log: &AuditLog,
+) -> Option<ToolResult> {
+    // Parse tool call from content (legacy format)
+    let (tool_name, args) = parse_tool_call(content)?;
+
+    // Delegate to the common execution logic
+    execute_parsed_tool_call(tool_name, args, registry, policy_engine, sandbox, audit_log).await
+}
+
 /// Parse a tool call from LLM response content
 /// Returns (tool_name, args) if found, None otherwise
+/// Parse tool call from structured LLM response (OpenAI Tools format)
+fn parse_structured_tool_call(choice: &Choice) -> Option<(String, serde_json::Value)> {
+    let tool_calls = choice.tool_calls.as_ref()?;
+    let first_call = tool_calls.first()?;
+
+    let tool_name = first_call.function.name.clone();
+    let args: serde_json::Value = serde_json::from_str(&first_call.function.arguments).ok()?;
+
+    Some((tool_name, args))
+}
+
+/// Parse tool call from legacy pattern-matching format (TOOL_CALL: / ARGS:)
 fn parse_tool_call(content: &str) -> Option<(String, serde_json::Value)> {
     let mut lines = content.lines();
     let tool_call_line = lines.find(|l| l.trim().starts_with("TOOL_CALL:"))?;

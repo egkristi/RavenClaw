@@ -127,6 +127,21 @@ pub struct ToolDefinition {
     pub category: ToolCategory,
 }
 
+impl ToolDefinition {
+    /// Convert to OpenAI Tools format for structured function calling
+    /// See: https://platform.openai.com/docs/guides/function-calling
+    pub fn to_openai_tool(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": self.parameters
+            }
+        })
+    }
+}
+
 /// Tool categories for grouping and policy
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum ToolCategory {
@@ -228,6 +243,14 @@ impl ToolRegistry {
         self.tools
             .values()
             .map(|t| t.definition().clone())
+            .collect()
+    }
+
+    /// Get all tool definitions in OpenAI Tools format for structured function calling
+    pub fn to_openai_tools(&self) -> Vec<serde_json::Value> {
+        self.tools
+            .values()
+            .map(|t| t.definition().to_openai_tool())
             .collect()
     }
 

@@ -57,6 +57,10 @@ pub struct ChatRequest {
     pub max_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_choice: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -75,12 +79,29 @@ pub struct ChatResponse {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct ToolCallResponse {
+    #[allow(dead_code)]
+    pub id: String,
+    #[serde(rename = "type")]
+    pub call_type: String,
+    pub function: FunctionCall,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct FunctionCall {
+    pub name: String,
+    pub arguments: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct Choice {
     #[allow(dead_code)]
     pub index: u32,
     pub message: ChatMessage,
     #[allow(dead_code)]
     pub finish_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCallResponse>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
