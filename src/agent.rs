@@ -402,7 +402,7 @@ async fn execute_tool_call(content: &str, registry: &ToolRegistry) -> Option<Too
     let (tool_name, args) = parse_tool_call(content)?;
 
     let call = ToolCall {
-        name: tool_name,
+        name: tool_name.clone(),
         arguments: args,
         id: None,
     };
@@ -410,7 +410,7 @@ async fn execute_tool_call(content: &str, registry: &ToolRegistry) -> Option<Too
     match registry.execute(call).await {
         Ok(result) => Some(result),
         Err(e) => Some(ToolResult {
-            tool_name: tool_name,
+            tool_name,
             success: false,
             output: String::new(),
             error: Some(e.to_string()),
