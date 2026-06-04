@@ -43,6 +43,57 @@ All notable changes to RavenClaw will be documented in this file.
 
 ---
 
+## [0.5.1] — 2026-06-04
+
+**v0.5.1: Resilience & Token Budgets** — Retry logic, circuit breaker, fallback chains.
+
+### ✨ Added
+
+**Retry with Exponential Backoff**
+- Configurable retries (default: 3), base delay (100ms), max delay (10s)
+- Jitter factor (0.5) to prevent thundering herd
+- Auth failures not retried (immediate fail)
+- CLI: `--retry-max`, `--retry-base-delay`, `--retry-max-delay`
+
+**Circuit Breaker Pattern**
+- Opens after 5 consecutive failures
+- Half-open state after 30s timeout
+- Automatic reset on success
+- Prevents cascading failures to unhealthy providers
+
+**Token Budget Tracking**
+- `--token-budget <N>` CLI flag and `RAVENCLAW_TOKEN_BUDGET` env var
+- Tracks token usage from `response.usage` field
+- Blocks requests when budget exceeded
+- Estimated cost calculation (per 1K tokens)
+
+**Provider Fallback Chain**
+- `ProviderFallbackChain` tries providers in order until success
+- Integrates with token budget tracking
+- Logs warnings on provider failures
+- CLI: `--fallback-chain <providers>` (comma-separated)
+
+**New Tests (12 added)**
+- Retry delay calculation (exponential backoff verification)
+- Circuit breaker state transitions (closed → open → half-open)
+- Token budget tracking and cost estimation
+- Provider fallback chain creation
+
+### 🔧 Changed
+
+- `src/llm.rs`: Added `RetryConfig`, `CircuitBreaker`, `TokenBudget`, `ProviderFallbackChain`
+- `src/config.rs`: Added `token_budget`, `retry_max`, `retry_base_delay_ms`, `retry_max_delay_ms` to `LLMConfig`
+- `src/main.rs`: Added CLI flags for v0.5.1 features
+- `OpenAICompatibleClient`: Integrated retry logic into `send_request_with_retry()`
+
+### 📦 Technical
+
+- Version: 0.5.1
+- No breaking changes — all new features are opt-in
+- Dependencies: `rand` (already present) used for jitter
+
+---
+
 ## [0.5.0] — 2026-06-04
 
 **v0.5: Providers and Routing** — Unified client, resilient fallback, token budgets.
@@ -75,26 +126,15 @@ All notable changes to RavenClaw will be documented in this file.
 
 ### 📦 Technical
 
-- Version bumped to 0.5.0 (in development)
+- Version: 0.5.0
 - Code coverage: New unified client tests added
 - No breaking changes — legacy clients remain functional
 
 ---
 
-## [Unreleased] — v0.5.1+ Planning
+## [Unreleased] — v0.5.2+ Planning
 
 ### Remaining v0.5 Objectives
-
-**Retry & Fallback Chain** (v0.5.1)
-- Exponential backoff with jitter (base 100ms, max 10s, 3 retries)
-- Fallback chain: primary → secondary → tertiary (configurable order)
-- Circuit breaker: open after 5 consecutive failures, half-open after 30s
-
-**Token Budget & Cost Tracking** (v0.5.1)
-- `--token-budget <N>` CLI flag and `RAVENCLAW_TOKEN_BUDGET` env var
-- Track tokens per request using `usage` field
-- Cost estimation table (per-provider, per-model pricing)
-- Auto-downgrade on budget exhaustion
 
 **MCP Client Integration** (v0.5.2)
 - MCP client: connect to external MCP servers
@@ -105,6 +145,11 @@ All notable changes to RavenClaw will be documented in this file.
 - Direct Anthropic API client
 - Native tool use support
 - Multi-modal input (images)
+
+**Multi-modal Input** (v0.5.2)
+- Image attachments in `ChatMessage` (base64 or URL)
+- PDF/text document ingestion
+- Provider-specific encoding (OpenAI vision, Anthropic images)
 
 ---
 
