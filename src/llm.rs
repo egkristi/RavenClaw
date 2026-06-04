@@ -1,14 +1,17 @@
 //! Multi-provider LLM client integration
 //!
 //! Supports LiteLLM, OpenAI, OpenRouter, Ollama, and Anthropic with a unified trait-based API.
-//! v0.5: Unified OpenAI-compatible client eliminates code duplication.
+//! v0.5: Unified OpenAI-compatible client, retry/fallback, token budgets.
 
 use futures::Stream;
+use rand::Rng;
 use reqwest::{Client, Response};
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 use thiserror::Error;
+use tokio::time::sleep;
 use uuid::Uuid;
 
 /// A streaming chunk of an LLM response
@@ -74,6 +77,147 @@ pub enum LLMError {
     #[error("Provider not supported: {0}")]
     #[allow(dead_code)]
     ProviderNotSupported(String),
+
+    #[error("Token budget exceeded")]
+    TokenBudgetExceeded,
+
+    #[error("All providers failed after retries")]
+    AllProvidersFailed,
+
+    #[error("Circuit breaker open for provider: {0}")]
+    CircuitBreakerOpen(String),
+}
+
+/// Retry configuration for LLM requests (v0.5)
+#[derive(Debug, Clone)]
+pub struct RetryConfig {
+    /// Maximum number of retries (default: 3)
+    pub max_retries: u32,
+    /// Base delay for exponential backoff in ms (default: 100)
+    pub base_delay_ms: u64,
+    /// Maximum delay in ms (default: 10000)
+    pub max_delay_ms: u64,
+    /// Jitter factor (0.0-1.0, default: 0.5)
+    pub jitter: f64,
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            max_retries: 3,
+            base_delay_ms: 100,
+            max_delay_ms: 10000,
+            jitter: 0.5,
+        }
+    }
+}
+
+impl RetryConfig {
+    /// Calculate delay with exponential backoff and jitter
+    pub fn delay_for_attempt(&self, attempt: u32) -> Duration {
+        use rand::Rng;
+        let exp = 2u64.pow(attempt);
+        let base = self.base_delay_ms * exp;
+        let capped = base.min(self.max_delay_ms);
+        let jitter_range = (capped as f64) * self.jitter;
+        let jitter = rand::thread_rng().gen_range(-jitter_range..=jitter_range) as u64;
+        let delay = capped.saturating_add(jitter).max(self.base_delay_ms);
+        Duration::from_millis(delay)
+    }
+}
+
+/// Circuit breaker state (v0.5)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CircuitState {
+    Closed,
+    Open,
+    HalfOpen,
+}
+
+/// Circuit breaker for provider resilience (v0.5)
+#[derive(Debug)]
+pub struct CircuitBreaker {
+    pub state: CircuitState,
+    pub failure_count: u32,
+    pub last_failure_time: Option<std::time::Instant>,
+    pub open_duration: Duration,
+}
+
+impl CircuitBreaker {
+    pub fn new(open_duration_secs: u64) -> Self {
+        Self {
+            state: CircuitState::Closed,
+            failure_count: 0,
+            last_failure_time: None,
+            open_duration: Duration::from_secs(open_duration_secs),
+        }
+    }
+
+    pub fn record_success(&mut self) {
+        self.failure_count = 0;
+        self.state = CircuitState::Closed;
+    }
+
+    pub fn record_failure(&mut self) {
+        self.failure_count += 1;
+        self.last_failure_time = Some(std::time::Instant::now());
+        if self.failure_count >= 5 {
+            self.state = CircuitState::Open;
+        }
+    }
+
+    pub fn can_execute(&mut self) -> bool {
+        match self.state {
+            CircuitState::Closed => true,
+            CircuitState::Open => {
+                if let Some(last) = self.last_failure_time {
+                    if last.elapsed() >= self.open_duration {
+                        self.state = CircuitState::HalfOpen;
+                        return true;
+                    }
+                }
+                false
+            }
+            CircuitState::HalfOpen => true,
+        }
+    }
+}
+
+/// Token budget tracker (v0.5)
+#[derive(Debug, Clone)]
+pub struct TokenBudget {
+    /// Maximum tokens allowed
+    pub max_tokens: u32,
+    /// Tokens used so far
+    pub used_tokens: u32,
+    /// Cost per 1K tokens (USD)
+    pub cost_per_1k: f64,
+}
+
+impl TokenBudget {
+    pub fn new(max_tokens: u32, cost_per_1k: f64) -> Self {
+        Self {
+            max_tokens,
+            used_tokens: 0,
+            cost_per_1k,
+        }
+    }
+
+    pub fn remaining(&self) -> u32 {
+        self.max_tokens.saturating_sub(self.used_tokens)
+    }
+
+    pub fn can_spend(&self, tokens: u32) -> bool {
+        self.remaining() >= tokens
+    }
+
+    pub fn record_usage(&mut self, tokens: u32) {
+        self.used_tokens = self.used_tokens.saturating_add(tokens);
+    }
+
+    pub fn estimated_cost(&self) -> f64 {
+        (self.used_tokens as f64 / 1000.0) * self.cost_per_1k
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -207,6 +351,8 @@ pub struct OpenAICompatibleClient {
     client: Client,
     config: LLMConfig,
     provider: OpenAICompatibleProvider,
+    retry_config: RetryConfig,
+    circuit_breaker: std::sync::Mutex<CircuitBreaker>,
 }
 
 impl OpenAICompatibleClient {
@@ -216,11 +362,88 @@ impl OpenAICompatibleClient {
             .build()
             .map_err(|e| LLMError::RequestFailed(format!("Failed to create HTTP client: {}", e)))?;
 
+        let retry_config = RetryConfig {
+            max_retries: config.retry_max,
+            base_delay_ms: config.retry_base_delay_ms,
+            max_delay_ms: config.retry_max_delay_ms,
+            jitter: 0.5,
+        };
+
         Ok(Self {
             client,
             config: config.clone(),
             provider,
+            retry_config,
+            circuit_breaker: std::sync::Mutex::new(CircuitBreaker::new(30)),
         })
+    }
+
+    /// Send request with retry logic (v0.5)
+    async fn send_request_with_retry(&self, request: ChatRequest) -> Result<ChatResponse, LLMError> {
+        let mut last_error = None;
+
+        for attempt in 0..=self.retry_config.max_retries {
+            // Check circuit breaker
+            {
+                let mut cb = self.circuit_breaker.lock().map_err(|_| {
+                    LLMError::RequestFailed("Circuit breaker lock poisoned".to_string())
+                })?;
+                if !cb.can_execute() {
+                    return Err(LLMError::CircuitBreakerOpen(self.provider.name().to_string()));
+                }
+            }
+
+            let result = self.send_request_inner(request.clone()).await;
+
+            match result {
+                Ok(response) => {
+                    // Record success in circuit breaker
+                    {
+                        let mut cb = self.circuit_breaker.lock().map_err(|_| {
+                            LLMError::RequestFailed("Circuit breaker lock poisoned".to_string())
+                        })?;
+                        cb.record_success();
+                    }
+                    return Ok(response);
+                }
+                Err(e) => {
+                    // Record failure
+                    {
+                        let mut cb = self.circuit_breaker.lock().map_err(|_| {
+                            LLMError::RequestFailed("Circuit breaker lock poisoned".to_string())
+                        })?;
+                        cb.record_failure();
+                    }
+
+                    last_error = Some(e);
+
+                    // Don't retry on auth failures
+                    if matches!(last_error, Some(LLMError::AuthFailed)) {
+                        return Err(last_error.unwrap());
+                    }
+
+                    // Wait before retry (if not last attempt)
+                    if attempt < self.retry_config.max_retries {
+                        let delay = self.retry_config.delay_for_attempt(attempt);
+                        sleep(delay).await;
+                    }
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or(LLMError::AllProvidersFailed))
+    }
+
+    /// Inner send request (no retry)
+    async fn send_request_inner(&self, request: ChatRequest) -> Result<ChatResponse, LLMError> {
+        let req = self.apply_headers(self.client.post(&self.endpoint()).json(&request));
+
+        let response = req
+            .send()
+            .await
+            .map_err(|e| LLMError::RequestFailed(e.to_string()))?;
+
+        handle_openai_response(response).await
     }
 
     fn build_request(&self, messages: Vec<ChatMessage>) -> ChatRequest {
@@ -275,7 +498,7 @@ impl OpenAICompatibleClient {
 impl LLMProviderTrait for OpenAICompatibleClient {
     async fn chat(&self, messages: Vec<ChatMessage>) -> Result<ChatResponse, LLMError> {
         let request = self.build_request(messages);
-        self.send_request(request).await
+        self.send_request_with_retry(request).await
     }
 
     async fn chat_stream(&self, messages: Vec<ChatMessage>) -> Result<StreamResult, LLMError> {
@@ -687,6 +910,76 @@ impl MultiModelManager {
     }
 }
 
+/// Provider fallback chain (v0.5) — tries providers in order until one succeeds
+pub struct ProviderFallbackChain {
+    configs: Vec<LLMConfig>,
+    token_budget: Option<TokenBudget>,
+}
+
+impl ProviderFallbackChain {
+    pub fn new(configs: Vec<LLMConfig>) -> Self {
+        Self {
+            configs,
+            token_budget: None,
+        }
+    }
+
+    pub fn with_token_budget(mut self, budget: TokenBudget) -> Self {
+        self.token_budget = Some(budget);
+        self
+    }
+
+    /// Execute with fallback — tries each provider in order until success
+    pub async fn chat_with_fallback(&self, messages: Vec<ChatMessage>) -> Result<ChatResponse, LLMError> {
+        let mut last_error = None;
+
+        for (i, config) in self.configs.iter().enumerate() {
+            let client = match create_client(config) {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::warn!("Failed to create client for provider {}: {}", config.provider.clone().into(), e);
+                    last_error = Some(e);
+                    continue;
+                }
+            };
+
+            // Check token budget before making request
+            if let Some(ref budget) = self.token_budget {
+                // Estimate ~500 tokens for typical request
+                if !budget.can_spend(500) {
+                    return Err(LLMError::TokenBudgetExceeded);
+                }
+            }
+
+            match client.chat(messages.clone()).await {
+                Ok(response) => {
+                    // Record token usage if available
+                    if let Some(ref mut budget) = self.token_budget {
+                        if let Some(usage) = &response.usage {
+                            budget.record_usage(usage.total_tokens);
+                        }
+                    }
+                    return Ok(response);
+                }
+                Err(e) => {
+                    tracing::warn!("Provider {} failed: {}", i, e);
+                    last_error = Some(e);
+                    // Continue to next provider
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or(LLMError::AllProvidersFailed))
+    }
+
+    /// Get provider names in chain
+    pub fn provider_names(&self) -> Vec<String> {
+        self.configs.iter()
+            .map(|c| format!("{:?}", c.provider))
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -921,6 +1214,120 @@ mod tests {
             let _ = client.chat(make_chat_messages()).await.unwrap();
             mock.assert();
         });
+    }
+
+    // ── Retry & Circuit Breaker tests (v0.5) ───────────────────────────
+
+    #[test]
+    fn test_retry_config_delay_calculation() {
+        let config = RetryConfig {
+            max_retries: 3,
+            base_delay_ms: 100,
+            max_delay_ms: 10000,
+            jitter: 0.0, // No jitter for predictable testing
+        };
+
+        // Exponential backoff: 100, 200, 400, 800...
+        assert_eq!(config.delay_for_attempt(0).as_millis(), 100);
+        assert_eq!(config.delay_for_attempt(1).as_millis(), 200);
+        assert_eq!(config.delay_for_attempt(2).as_millis(), 400);
+    }
+
+    #[test]
+    fn test_retry_config_max_delay_cap() {
+        let config = RetryConfig {
+            max_retries: 10,
+            base_delay_ms: 100,
+            max_delay_ms: 1000,
+            jitter: 0.0,
+        };
+
+        // Should cap at max_delay_ms
+        assert!(config.delay_for_attempt(10).as_millis() <= 1000);
+    }
+
+    #[test]
+    fn test_circuit_breaker_state_transitions() {
+        let mut cb = CircuitBreaker::new(30);
+
+        // Initially closed
+        assert_eq!(cb.state, CircuitState::Closed);
+        assert!(cb.can_execute());
+
+        // Record 5 failures → should open
+        for _ in 0..5 {
+            cb.record_failure();
+        }
+        assert_eq!(cb.state, CircuitState::Open);
+        assert!(!cb.can_execute());
+    }
+
+    #[test]
+    fn test_circuit_breaker_success_resets() {
+        let mut cb = CircuitBreaker::new(30);
+
+        // Record 3 failures
+        for _ in 0..3 {
+            cb.record_failure();
+        }
+        assert_eq!(cb.failure_count, 3);
+
+        // Record success → should reset
+        cb.record_success();
+        assert_eq!(cb.failure_count, 0);
+        assert_eq!(cb.state, CircuitState::Closed);
+    }
+
+    #[test]
+    fn test_token_budget_tracking() {
+        let mut budget = TokenBudget::new(1000, 0.002); // $0.002 per 1K tokens
+
+        assert_eq!(budget.remaining(), 1000);
+        assert!(budget.can_spend(500));
+
+        budget.record_usage(300);
+        assert_eq!(budget.remaining(), 700);
+        assert!(budget.can_spend(500));
+
+        budget.record_usage(500);
+        assert_eq!(budget.remaining(), 200);
+        assert!(!budget.can_spend(500));
+
+        // Estimated cost: 800 tokens / 1000 * $0.002 = $0.0016
+        assert!((budget.estimated_cost() - 0.0016).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_provider_fallback_chain_creation() {
+        let configs = vec![
+            LLMConfig {
+                provider: LLMProvider::LiteLLM,
+                endpoint: "http://localhost:4000".to_string(),
+                model: "gpt-4o".to_string(),
+                api_key: Some("key1".to_string()),
+                timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
+                token_budget: None,
+                retry_max: 3,
+                retry_base_delay_ms: 100,
+                retry_max_delay_ms: 10000,
+            },
+            LLMConfig {
+                provider: LLMProvider::Ollama,
+                endpoint: "http://localhost:11434".to_string(),
+                model: "llama3.1".to_string(),
+                api_key: None,
+                timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
+                token_budget: None,
+                retry_max: 3,
+                retry_base_delay_ms: 100,
+                retry_max_delay_ms: 10000,
+            },
+        ];
+
+        let chain = ProviderFallbackChain::new(configs);
+        assert_eq!(chain.provider_names(), vec!["LiteLLM", "Ollama"]);
     }
 
     // ── LiteLLM mockito tests (legacy, deprecated) ─────────────────────

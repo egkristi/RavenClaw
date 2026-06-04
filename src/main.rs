@@ -61,6 +61,22 @@ struct Args {
     /// Maximum iterations for the agent loop (default: 10)
     #[arg(long, env = "RAVENCLAW_MAX_ITERATIONS", default_value = "10")]
     max_iterations: usize,
+
+    /// Token budget per run (v0.5) — stops when exceeded
+    #[arg(long, env = "RAVENCLAW_TOKEN_BUDGET")]
+    token_budget: Option<u32>,
+
+    /// Retry max attempts (v0.5) — default 3
+    #[arg(long, env = "RAVENCLAW_RETRY_MAX", default_value = "3")]
+    retry_max: u32,
+
+    /// Retry base delay in ms (v0.5) — default 100
+    #[arg(long, env = "RAVENCLAW_RETRY_BASE_DELAY", default_value = "100")]
+    retry_base_delay_ms: u64,
+
+    /// Enable provider fallback chain (v0.5) — comma-separated providers
+    #[arg(long, env = "RAVENCLAW_FALLBACK_CHAIN")]
+    fallback_chain: Option<String>,
 }
 
 #[tokio::main]
@@ -98,6 +114,14 @@ async fn main() -> anyhow::Result<()> {
         config.llm.model = model;
     }
     if let Some(system_prompt) = args.system_prompt {
+        config.llm.system_prompt = system_prompt;
+    }
+    // v0.5: Apply token budget and retry settings
+    if let Some(budget) = args.token_budget {
+        config.llm.token_budget = Some(budget);
+    }
+    config.llm.retry_max = args.retry_max;
+    config.llm.retry_base_delay_ms = args.retry_base_delay_ms;
         config.llm.system_prompt = system_prompt;
     }
 

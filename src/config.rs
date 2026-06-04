@@ -77,7 +77,27 @@ pub struct LLMConfig {
     /// System prompt / persona for the agent
     #[serde(default = "default_system_prompt")]
     pub system_prompt: String,
+
+    /// Token budget (v0.5) — maximum tokens per run
+    #[serde(default)]
+    pub token_budget: Option<u32>,
+
+    /// Retry max attempts (v0.5) — default 3
+    #[serde(default = "default_retry_max")]
+    pub retry_max: u32,
+
+    /// Retry base delay in ms (v0.5) — default 100
+    #[serde(default = "default_retry_base_delay")]
+    pub retry_base_delay_ms: u64,
+
+    /// Retry max delay in ms (v0.5) — default 10000
+    #[serde(default = "default_retry_max_delay")]
+    pub retry_max_delay_ms: u64,
 }
+
+pub fn default_retry_max() -> u32 { 3 }
+pub fn default_retry_base_delay() -> u64 { 100 }
+pub fn default_retry_max_delay() -> u64 { 10000 }
 
 pub fn default_system_prompt() -> String {
     "You are RavenClaw, a lightweight autonomous agent. \
