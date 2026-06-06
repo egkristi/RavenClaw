@@ -1398,6 +1398,69 @@ mod tests {
         });
     }
 
+    // ── AnthropicClient tests (v0.5.3) ─────────────────────────────────
+
+    #[test]
+    fn test_anthropic_client_new() {
+        let config = LLMConfig {
+            provider: LLMProvider::Anthropic,
+            endpoint: String::new(),
+            model: "claude-sonnet-4-20250514".to_string(),
+            api_key: Some("sk-ant-test".to_string()),
+            timeout_secs: 30,
+            system_prompt: crate::config::default_system_prompt(),
+        };
+
+        let client = AnthropicClient::new(&config);
+        assert!(client.is_ok());
+    }
+
+    #[test]
+    fn test_anthropic_client_provider_name() {
+        let config = LLMConfig {
+            provider: LLMProvider::Anthropic,
+            endpoint: String::new(),
+            model: "claude-sonnet-4-20250514".to_string(),
+            api_key: Some("sk-ant-test".to_string()),
+            timeout_secs: 30,
+            system_prompt: crate::config::default_system_prompt(),
+        };
+
+        let client = AnthropicClient::new(&config).unwrap();
+        assert_eq!(client.provider_name(), "anthropic");
+    }
+
+    #[test]
+    fn test_anthropic_client_model() {
+        let config = LLMConfig {
+            provider: LLMProvider::Anthropic,
+            endpoint: String::new(),
+            model: "claude-opus-4-20250514".to_string(),
+            api_key: Some("sk-ant-test".to_string()),
+            timeout_secs: 30,
+            system_prompt: crate::config::default_system_prompt(),
+        };
+
+        let client = AnthropicClient::new(&config).unwrap();
+        assert_eq!(client.model(), "claude-opus-4-20250514");
+    }
+
+    #[test]
+    fn test_create_client_anthropic() {
+        let config = LLMConfig {
+            provider: LLMProvider::Anthropic,
+            endpoint: String::new(),
+            model: "claude-sonnet-4-20250514".to_string(),
+            api_key: Some("sk-ant-test".to_string()),
+            timeout_secs: 30,
+            system_prompt: crate::config::default_system_prompt(),
+        };
+
+        let client = create_client(&config);
+        assert!(client.is_ok());
+        assert_eq!(client.unwrap().provider_name(), "anthropic");
+    }
+
     // ── Retry & Circuit Breaker tests (v0.5) ───────────────────────────
 
     #[test]
