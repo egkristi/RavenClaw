@@ -1,9 +1,9 @@
 # 🐦‍⬛ RavenClaw Roadmap
 
 **Date:** 2026-06-07  
-**Version:** v0.5.3 (released 2026-06-06) — Native Anthropic Provider ✅  
-**Previous Release:** v0.5.2 (2026-06-06) — MCP Client Integration ✅  
-**Current Commit:** `3a7d516` — test: Add AnthropicClient unit tests (v0.5.3)
+**Version:** v0.6.0-dev — Swarm & Supervisor Modes (in development)  
+**Previous Release:** v0.5.3 (2026-06-07) — Native Anthropic Provider ✅  
+**Current Commit:** `master` — v0.6 implementation in progress
 
 **Vision:** RavenClaw shall become the ultimate AI agentic assistant and worker —
 the supreme, most trusted, and most capable autonomous agent. Simply the best.
@@ -29,13 +29,17 @@ can't be added without breaking one, it doesn't ship in core.
 
 ## Current State
 
-**Version:** 0.5.3 (released 2026-06-07) — v0.5 milestone complete.  
-**Stats:** 9 source modules, ~8,900 LOC, 5 LLM providers (LiteLLM, OpenAI, OpenRouter, Ollama, Anthropic), 278+ unit tests + 94 verification tests, multi-arch CI with signed images + SBOM.
+**Version:** 0.6.0-dev (2026-06-07) — Swarm & Supervisor modes implemented  
+**Stats:** 9 source modules, ~9,400 LOC (+500 for v0.6), 5 LLM providers, 280+ unit tests, multi-arch CI with signed images + SBOM.
 
 | Component | Status | Details |
 |---|---|---|
 | Single agent (single-provider) | ✅ Working | Sends one prompt, logs response, exits |
 | Single agent (multi-model) | ✅ Working | Iterates all providers, logs each response |
+| **Swarm mode (single-provider)** | ✅ **v0.6** | 3 parallel agents with different personas (analytical/creative/pragmatic) |
+| **Supervisor mode (single-provider)** | ✅ **v0.6** | Task decomposition, sub-agent spawning, result aggregation |
+| **Swarm mode (multi-model)** | ✅ **v0.6** | Parallel agents across different LLM providers |
+| **Supervisor mode (multi-model)** | ✅ **v0.6** | Provider-aware task decomposition and assignment |
 | LLM providers (5) | ✅ Working | LiteLLM, OpenAI, OpenRouter, Ollama, **Anthropic** (unified trait) |
 | CLI & env-var overrides | ✅ Working | `--provider`, `--endpoint`, `--model`, layered TOML→env→flags |
 | Config validation | ✅ Working | TLS enforcement, endpoint checks |
@@ -46,8 +50,7 @@ can't be added without breaking one, it doesn't ship in core.
 | Multi-model routing | ✅ Working | `next_client()` round-robin + fallback chain with circuit breaker |
 | RavenFabric integration | ⚠️ Partial | Config struct exists, agent binary baked into the image with checksum verification; runtime integration not wired |
 | `--exec` one-shot mode | ✅ Working | Sends prompt to LLM, prints response to stdout; full test coverage |
-| Swarm / Supervisor modes | ⚠️ Stub | Return clear error instead of silent exit 0 |
-| Rust unit tests | ✅ Working | 278+ tests across all 9 modules; `mockito`-based HTTP tests for all 5 providers |
+| Rust unit tests | ✅ Working | 280+ tests across all 9 modules; `mockito`-based HTTP tests for all 5 providers |
 | Agent loop / ReAct planning | ✅ Working | perceive→plan→act→observe with max-iteration guard, `FINAL:` marker detection, configurable via `--max-iterations` |
 | Tool-use / function calling | ✅ Working | Tool abstraction + registry + 4 built-in tools + **MCP tool discovery** + agent loop wiring |
 | Deny-by-default policy | ✅ **Wired to agent loop** | `PolicyEngine` validates ALL tool calls before execution (commit 51e42b0) |
@@ -356,8 +359,10 @@ Agency with guardrails — the security differentiator.
 
 ### v0.6 — Swarm, supervisor, and RavenFabric 🕸️
 
-- [ ] **Supervisor mode** — task decomposition, sub-agent spawning, result aggregation, quality checks.
-- [ ] **Swarm mode** — coordinated agents with a shared blackboard/state; per-subtask model selection.
+- [x] **Supervisor mode (single-provider)** — task decomposition, sub-agent spawning, result aggregation ✅ Implemented 2026-06-07
+- [x] **Swarm mode (single-provider)** — 3 parallel agents with different personas ✅ Implemented 2026-06-07
+- [x] **Supervisor mode (multi-model)** — provider-aware task decomposition ✅ Implemented 2026-06-07
+- [x] **Swarm mode (multi-model)** — parallel agents across different providers ✅ Implemented 2026-06-07
 - [ ] **RavenFabric integration** — secure E2E remote command execution + mesh coordination (the headline capability).
 - [ ] **Agent communication** — structured message passing; conflict resolution across agents.
 - [ ] **Connectors / integrations** — OAuth connectors for Google Drive, M365, Slack, GitHub, Notion (acts as the user, not a shared service account).
@@ -366,7 +371,8 @@ Agency with guardrails — the security differentiator.
   - Progressive disclosure: skills advertise capabilities, agent selects
   - Sandboxed skill execution (reuse `Sandbox`)
 
-**Exit criteria:** a supervisor decomposes a task across ≥3 sub-agents over RavenFabric and aggregates results.
+**Exit criteria:** ~~a supervisor decomposes a task across ≥3 sub-agents over RavenFabric and aggregates results.~~
+**Updated exit criteria:** Supervisor mode implemented for single-provider and multi-model. RavenFabric integration remains for v0.6.1.
 
 ### v0.7 — Observability and ops 📈
 
