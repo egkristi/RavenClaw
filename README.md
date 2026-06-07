@@ -168,6 +168,14 @@ provider = "openrouter"
 model = "anthropic/claude-sonnet-4-20250514"
 ```
 
+**Anthropic (Native, v0.5.3+):**
+```toml
+[llm]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+# No endpoint needed — uses https://api.anthropic.com
+```
+
 **OpenAI:**
 ```toml
 [llm]
@@ -188,6 +196,10 @@ model = "llama3.1"
 [[llms]]
 provider = "openrouter"
 model = "anthropic/claude-sonnet-4-20250514"
+
+[[llms]]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
 
 [[llms]]
 provider = "openai"

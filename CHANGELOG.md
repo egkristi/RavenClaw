@@ -2,7 +2,7 @@
 
 All notable changes to RavenClaw will be documented in this file.
 
-## [0.5.3] — 2026-06-06
+## [0.5.3] — 2026-06-07
 
 **v0.5.3: Native Anthropic Provider** — Direct Claude API with tool use support.
 
@@ -21,6 +21,12 @@ All notable changes to RavenClaw will be documented in this file.
 - Validation: Anthropic doesn't require custom endpoint (uses `api.anthropic.com`)
 - Env var support: `RAVENCLAW__LLM__PROVIDER=anthropic`
 
+**Unit Tests (4 new)**
+- `test_anthropic_client_new` — Verify client construction
+- `test_anthropic_client_provider_name` — Verify provider name returns "anthropic"
+- `test_anthropic_client_model` — Verify model name is preserved
+- `test_create_client_anthropic` — Verify factory function integration
+
 **Usage:**
 ```bash
 # Via config
@@ -38,13 +44,16 @@ RAVENCLAW__LLMS='[{"provider":"anthropic","model":"claude-sonnet-4-20250514"}]'
 - Version bumped to 0.5.3 in `Cargo.toml`
 - `create_client()` factory updated to handle `LLMProvider::Anthropic`
 - Validation logic updated: Anthropic grouped with OpenAI/OpenRouter (no endpoint required)
+- README.md updated with Anthropic provider examples
 
 ### 📦 Technical
 
 - ~200 LOC new Anthropic client code
+- 63 LOC new unit tests
 - Anthropic response format converted to RavenClaw's unified `ChatResponse`
 - Tool calls parsed from `ToolUse` content blocks → `ToolCallResponse`
 - No external dependencies added (uses existing `reqwest`, `serde`, `serde_json`)
+- Total test suite: 278+ tests across 9 modules
 
 ---
 
