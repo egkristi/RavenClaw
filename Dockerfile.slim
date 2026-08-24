@@ -8,7 +8,7 @@
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 
-FROM --platform=$BUILDPLATFORM rust:1.88-slim-bookworm@sha256:38bc5a86d998772d4aec2348656ed21438d20fcdce2795b56ca434cf21430d89 AS builder
+FROM --platform=$BUILDPLATFORM rust:1.98-slim-bookworm@sha256:94e9efa4033213dbb70d4f665527e7ece3944ddb7ba1dd2e43f6fd6e2490af58 AS builder
 
 WORKDIR /app
 
