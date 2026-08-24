@@ -193,7 +193,7 @@ jobs:
       - name: Upload Trivy results to GitHub Security
         if: always() && hashFiles('trivy-fs-results.sarif') != ''
         continue-on-error: true
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
+        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28  # v4.37.8
         with:
           sarif_file: trivy-fs-results.sarif
           category: trivy-filesystem
@@ -225,7 +225,7 @@ jobs:
       - name: Upload Trivy config results to GitHub Security
         if: always() && hashFiles('trivy-config-results.sarif') != ''
         continue-on-error: true
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
+        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28  # v4.37.8
         with:
           sarif_file: trivy-config-results.sarif
           category: trivy-config
@@ -257,7 +257,7 @@ jobs:
 
       - name: Upload Hadolint results to GitHub Security
         if: always() && hashFiles('hadolint-results.sarif') != ''
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
+        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28  # v4.37.8
         with:
           sarif_file: hadolint-results.sarif
           category: hadolint
@@ -301,7 +301,7 @@ jobs:
       - name: Upload Kubescape results to GitHub Security
         if: always() && hashFiles('kubescape-results.sarif') != ''
         continue-on-error: true
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
+        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28  # v4.37.8
         with:
           sarif_file: kubescape-results.sarif
           category: kubescape
@@ -331,7 +331,7 @@ jobs:
 
       - name: Upload Scorecard results to GitHub Security
         if: always() && hashFiles('scorecard-results.sarif') != ''
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
+        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28  # v4.37.8
         with:
           sarif_file: scorecard-results.sarif
           category: ossf-scorecard
