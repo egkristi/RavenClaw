@@ -35,6 +35,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "serde_yaml",
  "serial_test",
  "sha2",
  "thiserror 2.0.18",

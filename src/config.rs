@@ -1803,4 +1803,107 @@ mod tests {
         let json = serde_json::to_string(&provider).unwrap();
         assert_eq!(json, r#""litellm""#);
     }
+
+    /// Deterministic property-style fuzz test for the provider parser: hammer
+    /// `LLMProvider::parse` with 10,000 random-ish strings and assert it never
+    /// panics and always returns a valid variant (falling back to LiteLLM).
+    #[test]
+    fn test_llm_provider_parse_never_panics_on_adversarial_input() {
+        struct Lcg(u64);
+        impl Lcg {
+            fn next(&mut self) -> u64 {
+                self.0 = self
+                    .0
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                self.0
+            }
+        }
+        let mut rng = Lcg(0x9e37_79b9_7f4a_7c15);
+        let alphabet: Vec<char> =
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_./ "
+                .chars()
+                .collect();
+
+        for _ in 0..10_000 {
+            let len = (rng.next() as usize) % 32;
+            let s: String = (0..len)
+                .map(|_| alphabet[(rng.next() as usize) % alphabet.len()])
+                .collect();
+            // Must never panic; result is always one of the 9 known variants.
+            let parsed = LLMProvider::parse(&s);
+            let _ = parsed; // no panic is the assertion; variant is always valid
+        }
+
+        // Deterministic sanity: a known input still parses correctly.
+        assert_eq!(LLMProvider::parse("openai"), LLMProvider::OpenAI);
+    }
+
+    /// Deterministic property test for config validation: construct 10,000
+    /// pseudo-random `LLMConfig` endpoint/provider/model combinations and assert
+    /// validation never panics (it returns Ok or a well-formed Err).
+    #[test]
+    fn test_config_validation_never_panics_on_adversarial_input() {
+        struct Lcg(u64);
+        impl Lcg {
+            fn next(&mut self) -> u64 {
+                self.0 = self
+                    .0
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                self.0
+            }
+        }
+        let mut rng = Lcg(0x1234_5678_9abc_def0);
+        let endpoints = [
+            "",
+            "http://localhost:4000",
+            "https://api.openai.com",
+            "http://127.0.0.1:11434",
+            "not-a-url",
+        ];
+        let providers = [
+            LLMProvider::LiteLLM,
+            LLMProvider::OpenAI,
+            LLMProvider::OpenRouter,
+            LLMProvider::Anthropic,
+            LLMProvider::Ollama,
+            LLMProvider::OpenAICompatible,
+        ];
+
+        for _ in 0..10_000 {
+            let endpoint = endpoints[(rng.next() as usize) % endpoints.len()].to_string();
+            let provider = providers[(rng.next() as usize) % providers.len()].clone();
+            let llm = LLMConfig {
+                provider,
+                endpoint,
+                model: "m".to_string(),
+                api_key: None,
+                timeout_secs: 30,
+                system_prompt: default_system_prompt(),
+                token_budget: None,
+                retry_max: 3,
+                retry_base_delay_ms: 100,
+                retry_max_delay_ms: 10000,
+            };
+            let config = Config {
+                llm,
+                llms: vec![],
+                ravenfabric: RavenFabricConfig::default(),
+                security: SecurityConfig::default(),
+                runtime: RuntimeConfig::default(),
+                telemetry: TelemetryConfig::default(),
+                scheduler: SchedulerConfig::default(),
+                web_search: WebSearchConfig::default(),
+                heartbeat: crate::heartbeat::HeartbeatConfig::default(),
+                mcp: McpConfig::default(),
+                swarm: crate::swarm::SwarmConfig::default(),
+                browser: BrowserConfig::default(),
+                load: crate::load::LoadConfig::default(),
+                web_policy: crate::web_policy::WebAccessPolicy::default(),
+            };
+            // Must never panic; Ok/Err both acceptable.
+            let _ = config.validate();
+        }
+    }
 }

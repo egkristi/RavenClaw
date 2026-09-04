@@ -116,6 +116,9 @@ notify = { version = "7", default-features = false, features = ["macos_kqueue"] 
 # TOML parsing for eval config files (v0.9)
 toml = "0.8"
 
+# YAML parsing for skill manifests (v1.8)
+serde_yaml = "0.9"
+
 # Lightweight regex for eval assertions (v0.9)
 regex-lite = "0.1"
 

@@ -9,8 +9,8 @@
 > operator, memory store, connectors, cost tracking, `/metrics`, Windows CI, deterministic
 > fuzzing, multi-modal input, WASM plugins, browser automation, advanced reasoning, durable
 > execution, per-request `/chat` model override, `swarm/synthesize` endpoint, RavenFabric
-> integration tests, documentation stats, and memory tiers) has been **removed** and is no
-> longer tracked here.
+> integration tests, documentation stats, memory tiers, and skill bundles) has been
+> **removed** and is no longer tracked here.
 
 ---
 
@@ -40,14 +40,7 @@ M365, Slack, GitHub, Notion) are not implemented.
 
 **Recommendation:** add OAuth2 client flow + per-service adapters behind a feature gate.
 
-### 2. Skill bundle concept (`skill.yaml`)
-
-The WASM plugin ABI (v1.0.1) shipped, but the higher-level "skill bundle" concept — a
-`skill.yaml` manifest + scripts + sandboxed execution — is not implemented.
-
-**Recommendation:** layer `skill.yaml` over the WASM plugin ABI.
-
-### 3. Formal fuzzing harness
+### 2. Formal fuzzing harness
 
 `policy.rs` has deterministic fuzz-style tests (10k-input `PolicyEngine` and
 `InjectionDetector`), but there is no `cargo fuzz` / libFuzzer harness and no property
@@ -56,7 +49,7 @@ tests for the config/TOML parsers.
 **Recommendation:** add a `fuzz/` crate with libFuzzer targets for `config` and `policy`
 parsers.
 
-### 4. SSH in container (debugging)
+### 3. SSH in container (debugging)
 
 Not implemented. Optional convenience for debugging running agents.
 
@@ -108,15 +101,14 @@ OpenClaw, distroless non-root container, edge-deployable on RPi5, no telemetry.
 
 ### Medium-term (1–3 months)
 1. OAuth connector framework + Google Drive / GitHub (Medium #1)
-2. `skill.yaml` bundle concept over the WASM plugin ABI (Medium #2)
-3. `cargo fuzz` harness for `config` / `policy` parsers (Medium #3)
+2. `cargo fuzz` harness for `config` / `policy` parsers (Medium #2)
 
 ### Long-term (3–12 months)
-4. Native Bedrock / Gemini / Vertex providers (Low #1)
-5. Python / TypeScript SDKs (Low #2)
-6. RavenFabric `rf-*` binary features + Terraform/Ansible (Low #3)
-7. Enterprise tier: RBAC, SSO/SAML, compliance presets (Low #4)
-8. SSH-in-container debugging (Medium #4)
+3. Native Bedrock / Gemini / Vertex providers (Low #1)
+4. Python / TypeScript SDKs (Low #2)
+5. RavenFabric `rf-*` binary features + Terraform/Ansible (Low #3)
+6. Enterprise tier: RBAC, SSO/SAML, compliance presets (Low #4)
+7. SSH-in-container debugging (Medium #3)
 
 ---
 

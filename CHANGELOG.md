@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Skill bundles (`skill.yaml`)** — new `src/skills.rs` with `SkillManifest`,
+  `SkillEntrypoint`, and `SkillSandbox`. A declarative YAML/JSON manifest bundling a
+  script command, fixed args, env vars, timeout, and sandbox preferences
+  (network/write), layered *over* the existing WASM plugin ABI and `shell_exec`
+  sandbox path. `from_yaml()`/`from_json()`/`validate()`/`to_command()` (shell-quoted)
+  round out the API. 10 new unit tests. `SkillManifest` re-exported.
+- **Config parser fuzz/property coverage** — two deterministic 10k-input tests in
+  `src/config.rs`: `test_llm_provider_parse_never_panics_on_adversarial_input` (hammers
+  `LLMProvider::parse` with random strings) and
+  `test_config_validation_never_panics_on_adversarial_input` (random provider/endpoint
+  combos through `Config::validate`). Complements the existing `policy.rs` fuzz tests
+  with no external fuzzer dependency (preserves the zero-extra-deps "Small" pillar).
 - **Tiered memory — episodic / semantic / procedural** — `MemoryStore::remember()`
   persists memories into three tiers (`MemoryTier::Episodic`/`Semantic`/`Procedural`)
   with a dependency-free deterministic feature-hash embedding (FNV-1a hashing trick,

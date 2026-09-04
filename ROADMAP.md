@@ -776,8 +776,9 @@ Per `RAVENCLAWS-MERGE.md`, the merge candidates were:
 - [ ] **OAuth connectors** — `integrations.rs` covers outbound messaging only. Add
   OAuth2 client flow + per-service adapters (Google Drive, M365, Slack, GitHub,
   Notion) behind a feature gate.
-- [ ] **Skill bundle concept (`skill.yaml`)** — layer a `skill.yaml` manifest + scripts
-  + sandboxed execution over the existing WASM plugin ABI.
+- [x] **Skill bundle concept (`skill.yaml`)** ✅ **DONE (2026-09-04)** — new `src/skills.rs`
+  (`SkillManifest`/`SkillEntrypoint`/`SkillSandbox`): declarative YAML/JSON skill manifests
+  layered over the WASM plugin ABI and `shell_exec` sandbox path. 10 tests.
 - [ ] **Formal fuzzing harness** — `policy.rs` has deterministic fuzz-style tests
   (10k-input `PolicyEngine` + `InjectionDetector`), but no `cargo fuzz`/libFuzzer
   harness and no property tests for the config/TOML parsers. Add a `fuzz/` crate.
