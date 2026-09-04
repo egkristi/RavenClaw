@@ -10,7 +10,7 @@
 //! - `GET /ready` — Readiness probe (200 when fully initialized, 503 during startup)
 //! - `GET /metrics` — Prometheus-style metrics (requests, tokens, tool calls, errors)
 //! - `GET /health/deep` — Deep health check (verifies LLM connectivity)
-//! - `POST /chat` — Send a message and get an agent response
+//! - `POST /chat` — Send a message and get an agent response (optional `model` override)
 //! - `POST /execute` — Submit a background task, returns task ID
 //! - `GET /tasks/{id}` — Poll background task status and result
 //! - `GET /tools` — List available tools with schemas
@@ -147,6 +147,8 @@ pub struct ServerState {
     pub start_time: Instant,
     /// LLM client for agent execution
     pub llm: Option<Arc<dyn LLMProviderTrait>>,
+    /// Multi-model manager for per-request model selection (all configured `[[llms]]`)
+    pub multi_model: Option<crate::llm::MultiModelManager>,
     /// Tool registry for tool listing and execution
     pub tool_registry: Option<ToolRegistry>,
     /// Background task manager for async execution
@@ -166,6 +168,7 @@ impl ServerState {
             config,
             start_time: Instant::now(),
             llm: None,
+            multi_model: None,
             tool_registry: None,
             bg_manager: None,
             mcp_manager: None,
@@ -602,11 +605,6 @@ async fn wait_for_sighup() -> bool {
 
 /// Handle POST /chat — send a message and get an agent response
 async fn handle_chat(state: &ServerState, body: &[u8]) -> anyhow::Result<Vec<u8>> {
-    let llm = state
-        .llm
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("No LLM client configured"))?;
-
     #[derive(serde::Deserialize)]
     struct ChatRequest {
         messages: Vec<ChatMessage>,
@@ -615,6 +613,10 @@ async fn handle_chat(state: &ServerState, body: &[u8]) -> anyhow::Result<Vec<u8>
         stream: bool,
         #[serde(default)]
         max_iterations: Option<usize>,
+        /// Optional per-request model override — selects a configured `[[llms]]`
+        /// profile by model name (case-insensitive).
+        #[serde(default)]
+        model: Option<String>,
     }
 
     let req: ChatRequest =
@@ -623,6 +625,29 @@ async fn handle_chat(state: &ServerState, body: &[u8]) -> anyhow::Result<Vec<u8>
     if req.messages.is_empty() {
         return Err(anyhow::anyhow!("No messages provided"));
     }
+
+    // Resolve the LLM client for this request. A per-request `model` selects a
+    // matching profile from the multi-model manager; otherwise fall back to the
+    // server's default client.
+    let llm: Arc<dyn LLMProviderTrait> = match &req.model {
+        Some(requested) => {
+            let manager = state.multi_model.as_ref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "No multi-model manager configured (no `[[llms]]` profiles); \
+                     cannot honor model override"
+                )
+            })?;
+            let client = manager
+                .find_by_model(requested)
+                .ok_or_else(|| anyhow::anyhow!("Model not found: {}", requested))?;
+            Arc::clone(client)
+        }
+        None => state
+            .llm
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No LLM client configured"))?
+            .clone(),
+    };
 
     // Extract system prompt from messages, or use default
     let system_prompt = req
@@ -955,6 +980,22 @@ pub async fn run_server(config: Config) -> anyhow::Result<()> {
         model = state.llm.as_ref().map(|l| l.model()).unwrap_or("unknown"),
         "LLM client initialized for server mode"
     );
+
+    // Initialize multi-model manager for per-request model selection
+    if !state.config.llms.is_empty() {
+        match llm::MultiModelManager::new(state.config.llms.clone()) {
+            Ok(manager) => {
+                info!(
+                    client_count = manager.client_count(),
+                    "Multi-model manager initialized (per-request model selection enabled)"
+                );
+                state.multi_model = Some(manager);
+            }
+            Err(e) => {
+                warn!(error = %e, "Failed to initialize multi-model manager; per-request model selection disabled");
+            }
+        }
+    }
 
     // Initialize tool registry
     info!("Initializing tool registry");

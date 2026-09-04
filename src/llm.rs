@@ -1860,6 +1860,23 @@ impl MultiModelManager {
         self.clients.len()
     }
 
+    /// Find a client by its configured model name (case-insensitive).
+    ///
+    /// Used to support a per-request `model` override over HTTP: an external
+    /// orchestrator can select a specific LLM profile for a single request
+    /// without changing the worker's default config.
+    ///
+    /// Returns `None` if no client's model matches `model`.
+    pub fn find_by_model(&self, model: &str) -> Option<&Arc<dyn LLMProviderTrait>> {
+        let needle = model.trim().to_lowercase();
+        if needle.is_empty() {
+            return None;
+        }
+        self.clients
+            .iter()
+            .find(|c| c.model().to_lowercase() == needle)
+    }
+
     /// Round-robin selection for load balancing
     pub fn next_client(&self, last_index: usize) -> Option<&Arc<dyn LLMProviderTrait>> {
         if self.clients.is_empty() {
@@ -3595,6 +3612,70 @@ mod tests {
         let manager = MultiModelManager::new(Vec::<LLMConfig>::new()).unwrap();
         let tracker = CostTracker::new();
         assert!(manager.route_cheapest(&tracker).is_none());
+    }
+
+    #[test]
+    fn test_find_by_model_case_insensitive() {
+        let manager = MultiModelManager::new(vec![
+            LLMConfig {
+                provider: LLMProvider::LiteLLM,
+                endpoint: "http://localhost:4000".to_string(),
+                model: "gpt-4o".to_string(),
+                api_key: Some("test".to_string()),
+                timeout_secs: 30,
+                system_prompt: crate::config::default_system_prompt(),
+                token_budget: None,
+                retry_max: 3,
+                retry_base_delay_ms: 100,
+                retry_max_delay_ms: 10000,
+            },
+            LLMConfig {
+                provider: LLMProvider::Ollama,
+                endpoint: "http://localhost:11434".to_string(),
+                model: "llama3.1".to_string(),
+                api_key: None,
+                timeout_secs: 60,
+                system_prompt: crate::config::default_system_prompt(),
+                token_budget: None,
+                retry_max: 3,
+                retry_base_delay_ms: 100,
+                retry_max_delay_ms: 10000,
+            },
+        ])
+        .unwrap();
+
+        // Exact match
+        let gpt = manager.find_by_model("gpt-4o").unwrap();
+        assert_eq!(gpt.provider_name(), "litellm");
+
+        // Case-insensitive
+        let ollama = manager.find_by_model("LLAMA3.1").unwrap();
+        assert_eq!(ollama.provider_name(), "ollama");
+
+        // Whitespace is trimmed
+        let trimmed = manager.find_by_model("  gpt-4o  ").unwrap();
+        assert_eq!(trimmed.model(), "gpt-4o");
+    }
+
+    #[test]
+    fn test_find_by_model_unknown_and_empty() {
+        let manager = MultiModelManager::new(vec![LLMConfig {
+            provider: LLMProvider::LiteLLM,
+            endpoint: "http://localhost:4000".to_string(),
+            model: "gpt-4o".to_string(),
+            api_key: Some("test".to_string()),
+            timeout_secs: 30,
+            system_prompt: crate::config::default_system_prompt(),
+            token_budget: None,
+            retry_max: 3,
+            retry_base_delay_ms: 100,
+            retry_max_delay_ms: 10000,
+        }])
+        .unwrap();
+
+        assert!(manager.find_by_model("does-not-exist").is_none());
+        assert!(manager.find_by_model("").is_none());
+        assert!(manager.find_by_model("   ").is_none());
     }
 
     #[test]

@@ -754,6 +754,63 @@ Per `RAVENCLAWS-MERGE.md`, the merge candidates were:
 
 ## [Unreleased]
 
+### 🔴 High Priority — Open
+
+> Sourced from `RAVENCLAWS-IMPROVEMENTS.md` (re-verified 2026-09-04).
+
+- [ ] **Per-request `model` override on worker `/chat`** — `server.rs handle_chat`
+  accepts only `messages` / `stream` / `max_iterations`. The model is fixed by the
+  worker's own config, so an external orchestrator cannot push a per-task model over
+  HTTP. `MultiModelManager::route_cheapest()` / `route_by_complexity()` exist but are
+  not exposed over HTTP. Add an optional `"model": "<name>"` field to the `/chat`
+  request that selects an LLM profile for that request.
+- [ ] **One-shot `swarm/synthesize` HTTP endpoint** — swarm/supervisor modes exist,
+  but there is no one-shot "fan out a prompt to N diverse models and synthesize a
+  consensus" HTTP endpoint (`research-synthesize` is CLI-only). Expose a
+  `swarm/synthesize` endpoint taking a prompt + `n_agents` + an optional model list
+  and returning a single synthesized answer.
+- [ ] **RavenFabricClient integration coverage** — `src/ravenfabric.rs` has unit tests
+  but no true integration tests (happy-path round-trip, policy-deny, timeout). Add at
+  least 3: agent→relay→agent round-trip; policy-denied command returns a structured
+  error; unreachable relay returns a timeout error.
+
+### 🟡 Medium Priority — Open
+
+- [ ] **Memory tiers — episodic / semantic / procedural** — `persistence.rs` provides
+  `MemoryStore` + conversation search, but no semantic embeddings, no episodic recall,
+  no procedural skill memory. Add local embeddings (no cloud dependency) and
+  episodic/procedural tiers on top of the existing SQLite store.
+- [ ] **OAuth connectors** — `integrations.rs` covers outbound messaging only. Add
+  OAuth2 client flow + per-service adapters (Google Drive, M365, Slack, GitHub,
+  Notion) behind a feature gate.
+- [ ] **Skill bundle concept (`skill.yaml`)** — layer a `skill.yaml` manifest + scripts
+  + sandboxed execution over the existing WASM plugin ABI.
+- [ ] **Formal fuzzing harness** — `policy.rs` has deterministic fuzz-style tests
+  (10k-input `PolicyEngine` + `InjectionDetector`), but no `cargo fuzz`/libFuzzer
+  harness and no property tests for the config/TOML parsers. Add a `fuzz/` crate.
+- [ ] **SSH in container (debugging)** — optional convenience for debugging running
+  agents.
+- [ ] **Documentation stats sync** — `AGENTS.md` ("547 tests, 25 modules"),
+  `README.md` ("604 tests"), and `website/public/index.html` ("452 tests, 18 modules")
+  reference stale figures versus actual **v1.7.1, 1,239 tests, 27 modules**.
+  Single-source the counts and update on each release.
+
+### 🟢 Low Priority — Open
+
+- [ ] **Native provider support** — AWS **Bedrock**, Google **Gemini**, and **Vertex**
+  are reachable only via the LiteLLM gateway. Add direct native clients (Bedrock first
+  for AWS-native deployments).
+- [ ] **SDKs** — no Python or TypeScript SDKs. The library crate is Rust-only.
+- [ ] **RavenFabric `rf-*` binary features** — `rf-relay --metrics-listen`, structured
+  policy validation, `--rate-limit`/`--burst`, relay HA (`--peer`), `rf audit verify`,
+  policy versioning/rollback, multi-agent identity management, `rf cp`/`rf sync`,
+  `rf shell`, `rf skill generate`, `rf-dashboard`, Terraform provider, Ansible
+  collection.
+- [ ] **Enterprise tier (commercial)** — RBAC + multi-tenant isolation; SSO/SAML;
+  compliance presets & reporting (SOC2, ISO 27001, HIPAA, GDPR, PCI-DSS); multi-level
+  audit logging (off/basic/detailed/debug; JSON/CEF/LEEF/Syslog); air-gap/offline
+  licensing; output artifacts & reporting.
+
 ### 🔴 Critical — Fix Now (blocking)
 
 - [x] **Fix `src/patterns.rs` compile error** ✅ **DONE (2026-08-14)** — removed
