@@ -154,7 +154,8 @@ pub use patterns::{
     run_review_loop, run_review_loop_multi, run_voting, run_voting_multi, PatternConfig,
 };
 pub use persistence::{
-    ConversationStore, MemoryEntry, MemoryStore, RetentionPolicy, StoredMessage, StoredSession,
+    ConversationStore, MemoryEntry, MemoryStore, MemoryTier, RetentionPolicy, StoredMessage,
+    StoredSession, TieredMemory,
 };
 #[cfg(feature = "plugins")]
 pub use plugins::{PluginError, PluginTool, WasmPlugin, WasmPluginManager};

@@ -512,6 +512,18 @@ impl MemoryStore {
             );
 
             CREATE INDEX IF NOT EXISTS idx_memories_scope ON memories(scope);
+
+            CREATE TABLE IF NOT EXISTS tiered_memories (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                tier       TEXT NOT NULL,
+                scope      TEXT NOT NULL,
+                content    TEXT NOT NULL,
+                embedding  TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_tiered_memories_tier_scope
+                ON tiered_memories(tier, scope);
             ",
         )?;
         Ok(())
@@ -594,6 +606,219 @@ impl MemoryStore {
 
         Ok(entries)
     }
+
+    // ── Tiered memory (episodic / semantic / procedural) ──────────────────
+
+    /// Store a memory fact into a specific [`MemoryTier`].
+    ///
+    /// Unlike the flat key-value `set()`, this treats memory as belonging to one
+    /// of three tiers: **episodic** (what happened), **semantic** (what is known),
+    /// or **procedural** (how to do something). Each entry is tagged with an
+    /// embedding (a deterministic feature-hash vector) enabling semantic recall
+    /// via [`Self::recall_semantic`].
+    pub fn remember(&self, tier: MemoryTier, scope: &str, content: &str) -> SqlResult<()> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let embedding = feature_hash_embedding(content);
+        let embedding_json = serde_json::to_string(&embedding)
+            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+        self.conn.execute(
+            "INSERT INTO tiered_memories (tier, scope, content, embedding, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![tier.as_str(), scope, content, embedding_json, now],
+        )?;
+        Ok(())
+    }
+
+    /// List all tiered memories, optionally filtered by [`MemoryTier`].
+    pub fn recall(
+        &self,
+        tier: Option<MemoryTier>,
+        scope: Option<&str>,
+    ) -> SqlResult<Vec<TieredMemory>> {
+        let mut sql = String::from(
+            "SELECT id, tier, scope, content, embedding, created_at FROM tiered_memories",
+        );
+        let mut clauses: Vec<String> = Vec::new();
+        let mut args: Vec<String> = Vec::new();
+
+        if let Some(t) = tier {
+            clauses.push("tier = ?".to_string());
+            args.push(t.as_str().to_string());
+        }
+        if let Some(s) = scope {
+            clauses.push("scope = ?".to_string());
+            args.push(s.to_string());
+        }
+        if !clauses.is_empty() {
+            sql.push_str(" WHERE ");
+            sql.push_str(&clauses.join(" AND "));
+        }
+        sql.push_str(" ORDER BY created_at DESC");
+
+        let stmt_refs: Vec<&dyn rusqlite::ToSql> =
+            args.iter().map(|a| a as &dyn rusqlite::ToSql).collect();
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(stmt_refs.as_slice(), |row| {
+            let tier_str: String = row.get(1)?;
+            Ok(TieredMemory {
+                id: row.get(0)?,
+                tier: MemoryTier::parse(&tier_str),
+                scope: row.get(2)?,
+                content: row.get(3)?,
+                embedding: serde_json::from_str(&row.get::<_, String>(4)?).unwrap_or_default(),
+                created_at: row.get(5)?,
+            })
+        })?;
+        rows.collect::<SqlResult<Vec<_>>>()
+    }
+
+    /// Semantic recall: return tiered memories ranked by cosine similarity of
+    /// their embedding to the query's embedding (descending), with an optional
+    /// minimum similarity threshold.
+    pub fn recall_semantic(
+        &self,
+        query: &str,
+        tier: Option<MemoryTier>,
+        scope: Option<&str>,
+        min_similarity: f32,
+    ) -> SqlResult<Vec<(TieredMemory, f32)>> {
+        let query_embedding = feature_hash_embedding(query);
+        let mut results: Vec<(TieredMemory, f32)> = self
+            .recall(tier, scope)?
+            .into_iter()
+            .map(|m| {
+                let sim = cosine_similarity(&query_embedding, &m.embedding);
+                (m, sim)
+            })
+            .filter(|(_, sim)| *sim >= min_similarity)
+            .collect();
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        Ok(results)
+    }
+}
+
+// ── Tiered memory types ───────────────────────────────────────────────────
+
+/// The three memory tiers of a full assistant memory model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MemoryTier {
+    /// Episodic — records of what happened (events, conversations, sessions).
+    Episodic,
+    /// Semantic — durable facts and knowledge about users and the world.
+    Semantic,
+    /// Procedural — how-to knowledge (skills, procedures, learned workflows).
+    Procedural,
+}
+
+impl MemoryTier {
+    /// Lowercase string form, used as the persisted column value.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MemoryTier::Episodic => "episodic",
+            MemoryTier::Semantic => "semantic",
+            MemoryTier::Procedural => "procedural",
+        }
+    }
+
+    /// Parse a tier string (case-insensitive). Unknown values fall back to
+    /// [`MemoryTier::Semantic`].
+    pub fn parse(value: &str) -> Self {
+        match value.to_ascii_lowercase().as_str() {
+            "episodic" => MemoryTier::Episodic,
+            "procedural" => MemoryTier::Procedural,
+            _ => MemoryTier::Semantic,
+        }
+    }
+}
+
+/// A single tiered-memory record (see [`MemoryStore::remember`]).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TieredMemory {
+    /// Auto-increment row id.
+    pub id: i64,
+    /// Which tier this memory belongs to.
+    pub tier: MemoryTier,
+    /// Scope (e.g. "user", "global", "project:<id>").
+    pub scope: String,
+    /// The memory content.
+    pub content: String,
+    /// Deterministic feature-hash embedding of `content` (length 64).
+    pub embedding: Vec<f32>,
+    /// Unix timestamp when the memory was created.
+    pub created_at: u64,
+}
+
+/// A deterministic, dependency-free text embedding using feature hashing
+/// (a.k.a. the "hashing trick"). Returns a fixed-length vector of `f32`s that
+/// captures the token distribution of the input text. This gives usable cosine
+/// similarity for semantic recall without pulling in an ML runtime — preserving
+/// the ~5 MB "Small" pillar and the zero-runtime-deps guarantee.
+/// Default embedding dimensionality for the feature-hashing embedder.
+const EMBEDDING_DIM: usize = 64;
+
+/// Compute a deterministic feature-hash embedding with the default dimension.
+fn feature_hash_embedding(text: &str) -> Vec<f32> {
+    feature_hash_embedding_dim(text, EMBEDDING_DIM)
+}
+
+/// Feature-hash embedding with an explicit dimension.
+fn feature_hash_embedding_dim(text: &str, dim: usize) -> Vec<f32> {
+    let mut vec = vec![0.0f32; dim];
+    let words: Vec<&str> = text
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+
+    for (i, word) in words.iter().enumerate() {
+        // FNV-1a hash of each token.
+        let h = fnv1a(word.as_bytes());
+        let idx = (h % dim as u64) as usize;
+        vec[idx] += 1.0;
+
+        // Bigram of token with the following token for light word-order signal.
+        if let Some(next) = words.get(i + 1) {
+            let mut pair = String::from(*word);
+            pair.push('_');
+            pair.push_str(next);
+            let ph = fnv1a(pair.as_bytes());
+            vec[(ph % dim as u64) as usize] += 0.5;
+        }
+    }
+
+    // L2-normalize.
+    let norm = vec.iter().map(|v| v * v).sum::<f32>().sqrt();
+    if norm > 0.0 {
+        for v in vec.iter_mut() {
+            *v /= norm;
+        }
+    }
+    vec
+}
+
+/// FNV-1a 64-bit hash.
+fn fnv1a(bytes: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for b in bytes {
+        hash ^= *b as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
+
+/// Cosine similarity between two same-length vectors.
+fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    let n = a.len().min(b.len());
+    let (mut dot, mut na, mut nb) = (0.0f32, 0.0f32, 0.0f32);
+    for i in 0..n {
+        dot += a[i] * b[i];
+        na += a[i] * a[i];
+        nb += b[i] * b[i];
+    }
+    let denom = (na.sqrt() * nb.sqrt()).max(f32::EPSILON);
+    dot / denom
 }
 
 #[cfg(test)]
@@ -1001,5 +1226,125 @@ mod tests {
 
         let all_entries = store.list(None).unwrap();
         assert_eq!(all_entries.len(), 3);
+    }
+
+    // ── Tiered memory tests ────────────────────────────────────────────────
+
+    #[test]
+    fn test_memory_tier_as_str_and_from_str() {
+        assert_eq!(MemoryTier::Episodic.as_str(), "episodic");
+        assert_eq!(MemoryTier::Semantic.as_str(), "semantic");
+        assert_eq!(MemoryTier::Procedural.as_str(), "procedural");
+        assert_eq!(MemoryTier::parse("episodic"), MemoryTier::Episodic);
+        assert_eq!(MemoryTier::parse("EPISODIC"), MemoryTier::Episodic);
+        assert_eq!(MemoryTier::parse("procedural"), MemoryTier::Procedural);
+        assert_eq!(MemoryTier::parse("unknown"), MemoryTier::Semantic);
+    }
+
+    #[test]
+    fn test_remember_and_recall_by_tier() {
+        let store = create_test_memory_store();
+        store
+            .remember(MemoryTier::Episodic, "user", "met Alice on Tuesday")
+            .unwrap();
+        store
+            .remember(MemoryTier::Semantic, "user", "Alice likes the color blue")
+            .unwrap();
+        store
+            .remember(
+                MemoryTier::Procedural,
+                "user",
+                "deploy with ./scripts/deploy.sh",
+            )
+            .unwrap();
+
+        let episodic = store.recall(Some(MemoryTier::Episodic), None).unwrap();
+        assert_eq!(episodic.len(), 1);
+        assert_eq!(episodic[0].tier, MemoryTier::Episodic);
+        assert_eq!(episodic[0].content, "met Alice on Tuesday");
+
+        let all = store.recall(None, None).unwrap();
+        assert_eq!(all.len(), 3);
+
+        let scoped = store.recall(None, Some("user")).unwrap();
+        assert_eq!(scoped.len(), 3);
+    }
+
+    #[test]
+    fn test_recall_semantic_ranks_similar_content() {
+        let store = create_test_memory_store();
+        store
+            .remember(MemoryTier::Semantic, "user", "Alice loves cats and dogs")
+            .unwrap();
+        store
+            .remember(
+                MemoryTier::Semantic,
+                "user",
+                "the stock market closed higher today",
+            )
+            .unwrap();
+        store
+            .remember(MemoryTier::Semantic, "user", "Alice has two pet cats")
+            .unwrap();
+
+        let results = store
+            .recall_semantic(
+                "what pets does Alice have",
+                Some(MemoryTier::Semantic),
+                None,
+                0.0,
+            )
+            .unwrap();
+
+        // The most similar memory (about Alice's pets) should rank first.
+        assert!(!results.is_empty());
+        assert!(
+            results[0].1 > 0.0,
+            "top result must have positive similarity"
+        );
+        assert!(
+            results[0].0.content.contains("Alice"),
+            "top result should be about Alice, got: {}",
+            results[0].0.content
+        );
+    }
+
+    #[test]
+    fn test_recall_semantic_threshold_filters() {
+        let store = create_test_memory_store();
+        store
+            .remember(MemoryTier::Semantic, "user", "quantum physics entanglement")
+            .unwrap();
+
+        // A totally unrelated query should fall below a high threshold.
+        let results = store
+            .recall_semantic(
+                "baking sourdough bread",
+                Some(MemoryTier::Semantic),
+                None,
+                0.9,
+            )
+            .unwrap();
+        assert!(results.is_empty(), "unrelated query should be filtered out");
+    }
+
+    #[test]
+    fn test_feature_hash_embedding_is_normalized_and_deterministic() {
+        let a = feature_hash_embedding("hello world");
+        let b = feature_hash_embedding("hello world");
+        assert_eq!(a, b, "embedding must be deterministic");
+        assert_eq!(a.len(), EMBEDDING_DIM);
+
+        // L2 norm should be ~1.0.
+        let norm: f32 = a.iter().map(|v| v * v).sum::<f32>().sqrt();
+        assert!((norm - 1.0).abs() < 1e-6, "embedding should be normalized");
+    }
+
+    #[test]
+    fn test_cosine_similarity_extremes() {
+        let v = vec![1.0f32, 0.0, 0.0];
+        assert!((cosine_similarity(&v, &v) - 1.0).abs() < 1e-6);
+        let orth = vec![0.0f32, 1.0, 0.0];
+        assert!(cosine_similarity(&v, &orth).abs() < 1e-6);
     }
 }

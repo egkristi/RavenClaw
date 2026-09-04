@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Tiered memory — episodic / semantic / procedural** — `MemoryStore::remember()`
+  persists memories into three tiers (`MemoryTier::Episodic`/`Semantic`/`Procedural`)
+  with a dependency-free deterministic feature-hash embedding (FNV-1a hashing trick,
+  L2-normalized, 64-dim). `recall()` filters by tier/scope; `recall_semantic()` ranks
+  memories by cosine similarity with a minimum-similarity threshold. No ML runtime is
+  pulled in — preserving the ~5 MB "Small" pillar. `MemoryTier`/`TieredMemory`
+  re-exported. 8 new unit tests.
 - **Per-request `model` override on `/chat`** — `MultiModelManager::find_by_model()`
   (case-insensitive, whitespace-trimming model lookup) plus an optional `"model"`
   field on the `POST /chat` request. When present, the server selects the matching

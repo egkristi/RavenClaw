@@ -770,10 +770,9 @@ Per `RAVENCLAWS-MERGE.md`, the merge candidates were:
 
 ### 🟡 Medium Priority — Open
 
-- [ ] **Memory tiers — episodic / semantic / procedural** — `persistence.rs` provides
-  `MemoryStore` + conversation search, but no semantic embeddings, no episodic recall,
-  no procedural skill memory. Add local embeddings (no cloud dependency) and
-  episodic/procedural tiers on top of the existing SQLite store.
+- [x] **Memory tiers — episodic / semantic / procedural** ✅ **DONE (2026-09-04)** —
+  `MemoryStore::remember()` + `MemoryTier` (Episodic/Semantic/Procedural) + dependency-free
+  feature-hash embeddings with `recall_semantic()` cosine-similarity ranking. 8 tests.
 - [ ] **OAuth connectors** — `integrations.rs` covers outbound messaging only. Add
   OAuth2 client flow + per-service adapters (Google Drive, M365, Slack, GitHub,
   Notion) behind a feature gate.

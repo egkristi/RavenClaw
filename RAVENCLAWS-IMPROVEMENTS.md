@@ -9,8 +9,8 @@
 > operator, memory store, connectors, cost tracking, `/metrics`, Windows CI, deterministic
 > fuzzing, multi-modal input, WASM plugins, browser automation, advanced reasoning, durable
 > execution, per-request `/chat` model override, `swarm/synthesize` endpoint, RavenFabric
-> integration tests, and documentation stats) has been **removed** and is no longer
-> tracked here.
+> integration tests, documentation stats, and memory tiers) has been **removed** and is no
+> longer tracked here.
 
 ---
 
@@ -25,39 +25,29 @@ The remaining improvement surface is almost entirely **ecosystem & strategic par
 | # | Gap | Category | Leverage |
 |---|---|---|---|
 | 1 | **OAuth connectors** (Google Drive, M365, Slack, GitHub, Notion) | Parity | ⭐⭐⭐ |
-| 2 | **Memory tiers** — episodic / semantic (local embeddings) / procedural | Parity | ⭐⭐⭐ |
-| 3 | **Enterprise tier** — RBAC, SSO/SAML, compliance presets | Commercial | ⭐⭐⭐ |
-| 4 | **SDK ecosystem** (Python / TypeScript) | Ecosystem | ⭐⭐ |
-| 5 | **RavenFabric `rf-*` binary features** | Strategic | ⭐⭐ |
+| 2 | **Enterprise tier** — RBAC, SSO/SAML, compliance presets | Commercial | ⭐⭐⭐ |
+| 3 | **SDK ecosystem** (Python / TypeScript) | Ecosystem | ⭐⭐ |
+| 4 | **RavenFabric `rf-*` binary features** | Strategic | ⭐⭐ |
 
 ---
 
 ## 🟡 Medium Priority — Open
 
-### 1. Memory tiers — episodic / semantic / procedural
-
-`persistence.rs` provides `MemoryStore` (key-value + scoping) and conversation search, but
-there are no **semantic embeddings**, no **episodic** recall, and no **procedural** skill
-memory.
-
-**Recommendation:** add local embeddings (no cloud dependency) and episodic/procedural
-tiers on top of the existing SQLite store.
-
-### 2. OAuth connectors
+### 1. OAuth connectors
 
 `integrations.rs` covers outbound messaging only. **OAuth-based connectors** (Google Drive,
 M365, Slack, GitHub, Notion) are not implemented.
 
 **Recommendation:** add OAuth2 client flow + per-service adapters behind a feature gate.
 
-### 3. Skill bundle concept (`skill.yaml`)
+### 2. Skill bundle concept (`skill.yaml`)
 
 The WASM plugin ABI (v1.0.1) shipped, but the higher-level "skill bundle" concept — a
 `skill.yaml` manifest + scripts + sandboxed execution — is not implemented.
 
 **Recommendation:** layer `skill.yaml` over the WASM plugin ABI.
 
-### 4. Formal fuzzing harness
+### 3. Formal fuzzing harness
 
 `policy.rs` has deterministic fuzz-style tests (10k-input `PolicyEngine` and
 `InjectionDetector`), but there is no `cargo fuzz` / libFuzzer harness and no property
@@ -66,7 +56,7 @@ tests for the config/TOML parsers.
 **Recommendation:** add a `fuzz/` crate with libFuzzer targets for `config` and `policy`
 parsers.
 
-### 5. SSH in container (debugging)
+### 4. SSH in container (debugging)
 
 Not implemented. Optional convenience for debugging running agents.
 
@@ -117,17 +107,16 @@ OpenClaw, distroless non-root container, edge-deployable on RPi5, no telemetry.
 ## Prioritized Action Plan
 
 ### Medium-term (1–3 months)
-1. Memory tiers — episodic / semantic (local embeddings) / procedural (Medium #1)
-2. OAuth connector framework + Google Drive / GitHub (Medium #2)
-3. `skill.yaml` bundle concept over the WASM plugin ABI (Medium #3)
-4. `cargo fuzz` harness for `config` / `policy` parsers (Medium #4)
+1. OAuth connector framework + Google Drive / GitHub (Medium #1)
+2. `skill.yaml` bundle concept over the WASM plugin ABI (Medium #2)
+3. `cargo fuzz` harness for `config` / `policy` parsers (Medium #3)
 
 ### Long-term (3–12 months)
-5. Native Bedrock / Gemini / Vertex providers (Low #1)
-6. Python / TypeScript SDKs (Low #2)
-7. RavenFabric `rf-*` binary features + Terraform/Ansible (Low #3)
-8. Enterprise tier: RBAC, SSO/SAML, compliance presets (Low #4)
-9. SSH-in-container debugging (Medium #5)
+4. Native Bedrock / Gemini / Vertex providers (Low #1)
+5. Python / TypeScript SDKs (Low #2)
+6. RavenFabric `rf-*` binary features + Terraform/Ansible (Low #3)
+7. Enterprise tier: RBAC, SSO/SAML, compliance presets (Low #4)
+8. SSH-in-container debugging (Medium #4)
 
 ---
 
