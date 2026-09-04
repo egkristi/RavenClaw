@@ -30,7 +30,7 @@ RavenClaws is a **lightweight, secure Rust agent framework** with multi-provider
 - **Build:** `cargo build --release` (~5.2 MB stripped binary, ~5 ms startup)
 - **Library:** Available as `ravenclaws` on crates.io (binary + library crate)
 
-### Architecture (25 modules)
+### Architecture (27 modules)
 
 ```
 src/
@@ -74,7 +74,7 @@ src/
 | OpenAI-compatible API support | ✅ Working — any `/v1/chat/completions` endpoint |
 | Container security (non-root, read-only FS, dropped caps) | ✅ Working |
 | Library crate (ravenclaws on crates.io) | ✅ Working — binary + library |
-| Verification suite (547 tests, 25 modules, 0 failures) | ✅ Working |
+| Verification suite (114 checks) + cargo test (1,261 tests, 27 modules, 0 failures) | ✅ Working |
 | `--exec` mode | ✅ Working — one-shot command execution with response to stdout |
 | Streaming responses | ✅ Working — SSE streaming for LiteLLM, default fallback for others |
 | Conversation memory | ✅ Working — `ConversationMemory` struct with configurable max history |
@@ -245,7 +245,7 @@ If a feature cannot be tested (e.g., hardware-dependent), document the reason in
 
 ## Verification System
 
-The verification suite lives in `scripts/` and is **separate from `cargo test`** (which only has 2 unit tests).
+The verification suite lives in `scripts/` and is **separate from `cargo test`** (which has 1,261 unit tests: 631 lib + 623 bin + 7 doc).
 
 ### Structure
 
@@ -488,7 +488,7 @@ When a feature is finished or a fix is complete, update **all** relevant documen
 # Stage all changes
 git add -A
 
-# Pre-commit hooks run automatically (fmt, clippy, 416 tests, binary size, secrets)
+# Pre-commit hooks run automatically (fmt, clippy, 1,261 tests, binary size, secrets)
 git commit -m "Descriptive summary of changes"
 
 # Pre-push hooks run automatically (pre-commit + release build + Docker + security)
@@ -1067,18 +1067,18 @@ Edit `website/public/sitemap.xml`. Currently includes 7 URLs (home + 6 docs page
 
 The version number appears in:
 1. `website/public/index.html` — in the `<script type="application/ld+json">` block (`"softwareVersion": "0.9.2"`)
-2. `website/public/index.html` — hero stats (452 tests, 18 modules — update if these change)
+2. `website/public/index.html` — hero stats (1,261 tests, 27 modules — update if these change)
 
 **When to update:** On every release.
 
 #### Updating Stats on the Landing Page
 
 The hero section shows key stats:
-- Binary size (~5.2 MB)
+- Binary size (~7.7 MB)
 - Runtime deps (0)
-- LLM providers (5)
-- Unit tests (452)
-- Modules (18)
+- LLM providers (9)
+- Unit tests (1,261)
+- Modules (27)
 
 **When to update:** When any of these numbers change (e.g., new module added, test count changes).
 

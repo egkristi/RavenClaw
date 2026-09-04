@@ -7,12 +7,12 @@
 > **RavenAssistant01** (see "v0.11 — Universal Parity: The Merge Phase" below and
 > `RAVENCLAWS-MERGE.md` / `RAVENCLAWS-IMPROVEMENTS.md`).
 
-**Date:** 2026-07-02 *(re-analyzed 2026-08-13)*  
-**Version:** v1.6.0 — Universal Parity + Hardening + UIs + Providers 🐦‍⬛  
-**Previous Release:** v1.3.0 (2026-07-02) — Advanced Reasoning  
-**Current Commit:** (v1.6.0 — TUI + GUI + vLLM/SGLang + cost tracking)
+**Date:** 2026-07-02 *(re-analyzed 2026-09-04)*  
+**Version:** v1.7.1 — Universal Parity + Hardening + UIs + Providers 🐦‍⬛  
+**Previous Release:** v1.6.0 (2026-08-20) — TUI + GUI + vLLM/SGLang + cost tracking  
+**Current Commit:** (v1.7.1 — provider-string parsing fix)
 **CI Status:** Build & Release ✅ · Container Build ✅ · Security Scan ✅
-**Test Count:** 587 unit tests · 114 verification tests · 0 failures
+**Test Count:** 1,261 unit tests (631 lib + 623 bin + 7 doc) · 114 verification tests · 0 failures
 **v1.0 Hardening Progress:** v0.9.4–v0.9.16 all complete ✅. **v0.9.14 closed ALL remaining metrics and polish gaps** — token tracking, tool calls counter, `/ready` caching, MCP params optionality, RavenFabric pipe policy, `--eval /dev/null` handling, `imagePullPolicy` verification. **v0.9.15 closed ALL ecosystem expansion gaps** — vLLM docs + verification tests, llama.cpp docs + verification tests, distroless HTTP testing docs, website docs pages for both providers. **v0.9.16 closed the last v1.0 blocker** — SSE MCP ecosystem verification: `--mcp-sse-server` CLI flag wired, SSE transport for MCP client config, MCP integration tests (stdio + SSE), SSE transport documentation. All gaps identified in v0.9.11 rpi5 deployment feedback are now closed. **v1.0 is released — the stable release. All exit criteria are met.** **v1.0.1 fixes the 4 remaining critical rpi5 issues: `/tools/{name}` 404, RavenFabric URL builder, `/execute` empty result, and distroless SIGHUP — all resolved.** **v1.0.1 also adds WASM plugin system (Plugin ABI v1, 11 unit tests) and SQLite conversation persistence (15 unit tests) — 485 total unit tests across 20 modules.**
 
 **Strategic Positioning:** RavenClaws is the **"Temporal for AI agents"** — the lightweight, durable execution engine for AI agents. Unlike LangGraph (complex graphs), Temporal (heavy infra), or CrewAI (Python-only), RavenClaws gives you reliable, checkpointed agent execution in a ~5 MB binary that runs on a Raspberry Pi. **Durable execution (checkpoint/resume) is implemented in v0.9.12** — agent loop saves state after each iteration and survives process restarts. **Multi-agent patterns (debate, review-loop, research-synthesize, voting) are implemented in v0.9.13.** **Production stability verified in v0.9.11 rpi5 audit: 3,597 requests, 0 errors, 10 Mi RSS, 0 restarts over 7.5 hours.**
@@ -758,21 +758,15 @@ Per `RAVENCLAWS-MERGE.md`, the merge candidates were:
 
 > Sourced from `RAVENCLAWS-IMPROVEMENTS.md` (re-verified 2026-09-04).
 
-- [ ] **Per-request `model` override on worker `/chat`** — `server.rs handle_chat`
-  accepts only `messages` / `stream` / `max_iterations`. The model is fixed by the
-  worker's own config, so an external orchestrator cannot push a per-task model over
-  HTTP. `MultiModelManager::route_cheapest()` / `route_by_complexity()` exist but are
-  not exposed over HTTP. Add an optional `"model": "<name>"` field to the `/chat`
-  request that selects an LLM profile for that request.
-- [ ] **One-shot `swarm/synthesize` HTTP endpoint** — swarm/supervisor modes exist,
-  but there is no one-shot "fan out a prompt to N diverse models and synthesize a
-  consensus" HTTP endpoint (`research-synthesize` is CLI-only). Expose a
-  `swarm/synthesize` endpoint taking a prompt + `n_agents` + an optional model list
-  and returning a single synthesized answer.
-- [ ] **RavenFabricClient integration coverage** — `src/ravenfabric.rs` has unit tests
-  but no true integration tests (happy-path round-trip, policy-deny, timeout). Add at
-  least 3: agent→relay→agent round-trip; policy-denied command returns a structured
-  error; unreachable relay returns a timeout error.
+- [x] **Per-request `model` override on worker `/chat`** ✅ **DONE (2026-09-04)** —
+  `MultiModelManager::find_by_model()` + optional `"model"` field on `POST /chat`
+  selects a matching `[[llms]]` profile per request (case-insensitive). 2 tests.
+- [x] **One-shot `swarm/synthesize` HTTP endpoint** ✅ **DONE (2026-09-04)** —
+  `POST /swarm/synthesize` fans out a prompt to N diverse models across
+  fact-finder/analyst/innovator perspectives and synthesizes a consensus. 4 tests.
+- [x] **RavenFabricClient integration coverage** ✅ **DONE (2026-09-04)** —
+  5 mockito-backed HTTP round-trip tests (health, list-agents, execute happy-path,
+  policy-deny 403, broadcast fan-out).
 
 ### 🟡 Medium Priority — Open
 
@@ -790,10 +784,9 @@ Per `RAVENCLAWS-MERGE.md`, the merge candidates were:
   harness and no property tests for the config/TOML parsers. Add a `fuzz/` crate.
 - [ ] **SSH in container (debugging)** — optional convenience for debugging running
   agents.
-- [ ] **Documentation stats sync** — `AGENTS.md` ("547 tests, 25 modules"),
-  `README.md` ("604 tests"), and `website/public/index.html` ("452 tests, 18 modules")
-  reference stale figures versus actual **v1.7.1, 1,239 tests, 27 modules**.
-  Single-source the counts and update on each release.
+- [x] **Documentation stats sync** ✅ **DONE (2026-09-04)** — updated `AGENTS.md`,
+  `README.md`, and `website/public/index.html` to reflect v1.7.1, 1,261 tests,
+  27 modules, 9 providers.
 
 ### 🟢 Low Priority — Open
 
