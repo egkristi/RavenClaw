@@ -23,7 +23,7 @@ We don't aim to win by out-featuring them. We win by refusing to compromise on f
 RavenClaws is a **lightweight, secure Rust agent framework** with multi-provider LLM support. It runs as a single binary with zero runtime dependencies.
 
 - **Language:** Rust (edition 2021)
-- **Version:** 1.6.0 (Universal Parity + hardening + UIs + providers) — merged K8s operator, web policy, memory tiers, and messaging integrations from RavenAssistant01, plus declarative blueprints, sandbox snapshots, egress approval, local inference discovery, an installer, a TUI, a GUI, vLLM/SGLang providers, and cost tracking
+- **Version:** 1.8.0 (skill bundles + tiered memory + config fuzzing + HTTP synthesis + per-request model override) — on top of 1.6.0: merged K8s operator, web policy, memory tiers, and messaging integrations from RavenAssistant01, plus declarative blueprints, sandbox snapshots, egress approval, local inference discovery, an installer, a TUI, a GUI, vLLM/SGLang providers, and cost tracking
 - **License:** AGPL-3.0-or-later + Commercial
 - **Repository:** https://github.com/egkristi/RavenClaws
 - **Domain:** https://RavenClaws.io
