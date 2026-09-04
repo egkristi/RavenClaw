@@ -2661,7 +2661,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_write_and_read_file() {
-        let dir = std::env::temp_dir().join(format!("ravenclaws_test_{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("ravenclaws_test_write_read_{}", std::process::id()));
         let path = dir.join("test_write.txt");
         let path_str = path.to_string_lossy().to_string();
 
@@ -2686,7 +2687,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_write_file_append() {
-        let dir = std::env::temp_dir().join(format!("ravenclaws_test_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "ravenclaws_test_write_append_{}",
+            std::process::id()
+        ));
         let path = dir.join("test_append.txt");
         let path_str = path.to_string_lossy().to_string();
 

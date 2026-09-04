@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `[[llms]]` profiles). Fans out to diverse research perspectives across the
   selected models and returns a single synthesized answer plus per-agent findings.
   4 new unit tests.
+- **RavenFabricClient integration tests** — 5 mockito-backed HTTP round-trip tests
+  covering health, agent listing, execute happy-path, policy-denied (HTTP 403), and
+  broadcast fan-out. Closes the prior gap of zero integration coverage for the
+  RavenFabric mesh client.
+
+### Fixed
+- **Flaky `test_write_and_read_file` / `test_write_file_append`** — both file
+  tests shared the same `ravenclaws_test_{pid}` temp directory and each removed it
+  on cleanup, causing an intermittent race. Each test now uses a distinct directory.
 
 ## [v1.6.0] — 2026-08-20
 

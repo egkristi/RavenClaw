@@ -281,6 +281,15 @@ pub type Result<T> = std::result::Result<T, RavenFabricError>;
 mod tests {
     use super::*;
 
+    fn test_config(endpoint: Option<String>) -> RavenFabricConfig {
+        RavenFabricConfig {
+            endpoint,
+            agent_id: Some("agent-1".to_string()),
+            remote_exec: true,
+            allowed_hosts: vec![],
+        }
+    }
+
     #[test]
     fn test_ravenfabric_client_new_no_endpoint() {
         let config = RavenFabricConfig {
@@ -486,5 +495,137 @@ mod tests {
         assert!(!response.success);
         assert_eq!(response.stderr, "command not found");
         assert_eq!(response.exit_code, 127);
+    }
+
+    // ── Integration tests (mockito-backed HTTP round-trips) ──────────────
+
+    #[tokio::test]
+    async fn test_integration_health_round_trip() {
+        let mut server = mockito::Server::new_async().await;
+        let health_mock = server
+            .mock("GET", "/api/v1/health")
+            .with_status(200)
+            .with_body(r#"{"status":"ok"}"#)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let config = test_config(Some(server.url()));
+        let client = RavenFabricClient::new(&config).expect("client should be created");
+        let healthy = client.health().await.expect("health should succeed");
+        assert!(healthy, "relay should report healthy");
+        health_mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_integration_list_agents_round_trip() {
+        let mut server = mockito::Server::new_async().await;
+        let agents_mock = server
+            .mock("GET", "/api/v1/agents")
+            .with_status(200)
+            .with_body(
+                r#"[{"id":"a1","hostname":"worker-1","status":"online","last_seen":"2026-06-18T12:00:00Z","capabilities":["shell"]}]"#,
+            )
+            .expect(1)
+            .create_async()
+            .await;
+
+        let config = test_config(Some(server.url()));
+        let client = RavenFabricClient::new(&config).expect("client should be created");
+        let agents = client.list_agents().await.expect("list should succeed");
+        assert_eq!(agents.len(), 1);
+        assert_eq!(agents[0].id, "a1");
+        assert_eq!(agents[0].hostname, "worker-1");
+        agents_mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_integration_execute_round_trip() {
+        let mut server = mockito::Server::new_async().await;
+        let execute_mock = server
+            .mock("POST", "/api/v1/execute")
+            .match_body(mockito::Matcher::PartialJson(serde_json::json!({
+                "command": "echo hello"
+            })))
+            .with_status(200)
+            .with_body(
+                r#"{"success":true,"stdout":"hello\n","stderr":"","exit_code":0,"duration_ms":7}"#,
+            )
+            .expect(1)
+            .create_async()
+            .await;
+
+        let config = test_config(Some(server.url()));
+        let client = RavenFabricClient::new(&config).expect("client should be created");
+        let result = client
+            .execute("echo hello", Some("worker-1"), 10)
+            .await
+            .expect("execute should succeed");
+        assert!(result.success);
+        assert_eq!(result.stdout, "hello\n");
+        assert_eq!(result.exit_code, 0);
+        execute_mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_integration_execute_policy_deny() {
+        let mut server = mockito::Server::new_async().await;
+        // A 403 simulates a policy-denied command rejected by the relay.
+        let execute_mock = server
+            .mock("POST", "/api/v1/execute")
+            .with_status(403)
+            .with_body(r#"{"error":"policy denied: command not allowed"}"#)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let config = test_config(Some(server.url()));
+        let client = RavenFabricClient::new(&config).expect("client should be created");
+        let result = client.execute("rm -rf /", None, 10).await;
+        assert!(result.is_err(), "policy-denied execute should error");
+        match result.unwrap_err() {
+            RavenFabricError::RequestFailed(msg) => {
+                assert!(msg.contains("403"), "error should report HTTP 403: {}", msg);
+            }
+            other => panic!("Expected RequestFailed, got: {}", other),
+        }
+        execute_mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_integration_broadcast_round_trip() {
+        let mut server = mockito::Server::new_async().await;
+        let agents_mock = server
+            .mock("GET", "/api/v1/agents")
+            .with_status(200)
+            .with_body(
+                r#"[
+                    {"id":"a1","hostname":"worker-1","status":"online","last_seen":"2026-06-18T12:00:00Z","capabilities":["shell"]},
+                    {"id":"a2","hostname":"worker-2","status":"online","last_seen":"2026-06-18T12:00:00Z","capabilities":["shell"]}
+                ]"#,
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        let execute_mock = server
+            .mock("POST", "/api/v1/execute")
+            .with_status(200)
+            .with_body(
+                r#"{"success":true,"stdout":"ok\n","stderr":"","exit_code":0,"duration_ms":3}"#,
+            )
+            .expect(2)
+            .create_async()
+            .await;
+
+        let config = test_config(Some(server.url()));
+        let client = RavenFabricClient::new(&config).expect("client should be created");
+        let results = client
+            .broadcast("uptime", 10)
+            .await
+            .expect("broadcast should succeed");
+        assert_eq!(results.len(), 2, "broadcast fans out to both agents");
+        assert!(results.iter().all(|(_, r)| r.is_ok()));
+        agents_mock.assert_async().await;
+        execute_mock.assert_async().await;
     }
 }
