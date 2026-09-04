@@ -19,13 +19,13 @@ support. One static binary, zero runtime dependencies — no Python, no Node, no
 > vLLM + SGLang first-class providers; cost tracking — on top of v1.5.0: declarative agent
 > blueprints (`--blueprint`), complexity-based routing, sandbox snapshots, network-egress approval,
 > local inference discovery, an interactive installer, and Windows CI targets.
-> **1,261 unit tests**, 114 verification checks, 9 LLM providers, 27 source modules.
+> **1,281 unit tests**, 114 verification checks, 9 LLM providers, 28 source modules.
 
 | Footprint | Security | Providers | Deployment |
 |---|---|---|---|
 | **~7.7 MB binary** | **Memory-safe Rust** | **9 providers** | **Binary · Docker · K8s** |
-| **0 runtime deps** | **Signed images + SBOM** | **Multi-model** | **1,261 unit tests + 114 verification checks** |
-| **Library crate** | **27 modules** | **crates.io** | **AGPLv3 + Commercial** |
+| **0 runtime deps** | **Signed images + SBOM** | **Multi-model** | **1,281 unit tests + 114 verification checks** |
+| **Library crate** | **28 modules** | **crates.io** | **AGPLv3 + Commercial** |
 
 ---
 
@@ -84,7 +84,7 @@ See the **[ROADMAP](ROADMAP.md)** for how we get from here to there.
 
 ### Verified across every target
 
-- **1,261 Rust unit tests** across **27 modules** (incl. `mockito`-backed provider request/response/error paths for all 9 providers, plus RavenFabric, swarm, heartbeat, eval, scheduler, patterns, persistence, plugins, load, blueprint, local inference, and UI tests), runnable anywhere via `cargo test`.
+- **1,281 Rust unit tests** across **28 modules** (incl. `mockito`-backed provider request/response/error paths for all 9 providers, plus RavenFabric, swarm, heartbeat, eval, scheduler, patterns, persistence, plugins, load, blueprint, local inference, and UI tests), runnable anywhere via `cargo test`.
 - Plus a **114-check verification suite** (`scripts/verify.sh`) spanning **13 modules** across **4 deployment targets** — local binary, Docker, cross-compiled Linux, and Kubernetes — including security, performance, LLM quality, swarm, eval, MCP, and installer checks.
 - *Note:* the 114 verification checks are **system/integration level** (shell-orchestrated, requiring live services such as LiteLLM/Docker/kubectl).
 
@@ -201,7 +201,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-The library exposes all 27 modules with a stable public API:
+The library exposes all 28 modules with a stable public API:
 
 | Module | Purpose |
 |---|---|
@@ -583,7 +583,7 @@ Container images target both `linux/amd64` and `linux/arm64`.
 | CI/CD pipeline | ✅ Implemented | fmt + clippy + test, 5-target builds, multi-arch images, Cosign + SBOM + provenance + Trivy, crates.io publish, releases |
 | Security scanning | ✅ Implemented | CodeQL, cargo-audit, cargo-deny, Trivy (FS + config), Hadolint, Kubescape, OSSF Scorecard |
 | Verification suite | ✅ Working | 114 system/integration checks · 13 modules · 4 targets (`scripts/verify.sh`)
-| Rust unit tests | ✅ Working | 1,261 tests across 27 modules, incl. `mockito`-backed provider request/response/error paths, RavenFabric, swarm, heartbeat, eval, scheduler, patterns, persistence, plugins, load, blueprint, local inference, UI |
+| Rust unit tests | ✅ Working | 1,281 tests across 28 modules, incl. `mockito`-backed provider request/response/error paths, RavenFabric, swarm, heartbeat, eval, scheduler, patterns, persistence, plugins, load, blueprint, local inference, UI |
 | Reproducible builds | ✅ Working | `Cargo.lock` committed (`--locked`), multi-arch Docker cross-linker, RavenFabric agent checksum-verified |
 | `--exec` one-shot mode | ✅ Working | Run a single task, then exit |
 | Interactive REPL | ✅ Working | `--repl` with `/exit`, `/reset` commands |

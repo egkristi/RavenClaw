@@ -12,7 +12,7 @@
 **Previous Release:** v1.6.0 (2026-08-20) — TUI + GUI + vLLM/SGLang + cost tracking  
 **Current Commit:** (v1.7.1 — provider-string parsing fix)
 **CI Status:** Build & Release ✅ · Container Build ✅ · Security Scan ✅
-**Test Count:** 1,261 unit tests (631 lib + 623 bin + 7 doc) · 114 verification tests · 0 failures
+**Test Count:** 1,281 unit tests (649 lib + 625 bin + 7 doc) · 114 verification tests · 0 failures
 **v1.0 Hardening Progress:** v0.9.4–v0.9.16 all complete ✅. **v0.9.14 closed ALL remaining metrics and polish gaps** — token tracking, tool calls counter, `/ready` caching, MCP params optionality, RavenFabric pipe policy, `--eval /dev/null` handling, `imagePullPolicy` verification. **v0.9.15 closed ALL ecosystem expansion gaps** — vLLM docs + verification tests, llama.cpp docs + verification tests, distroless HTTP testing docs, website docs pages for both providers. **v0.9.16 closed the last v1.0 blocker** — SSE MCP ecosystem verification: `--mcp-sse-server` CLI flag wired, SSE transport for MCP client config, MCP integration tests (stdio + SSE), SSE transport documentation. All gaps identified in v0.9.11 rpi5 deployment feedback are now closed. **v1.0 is released — the stable release. All exit criteria are met.** **v1.0.1 fixes the 4 remaining critical rpi5 issues: `/tools/{name}` 404, RavenFabric URL builder, `/execute` empty result, and distroless SIGHUP — all resolved.** **v1.0.1 also adds WASM plugin system (Plugin ABI v1, 11 unit tests) and SQLite conversation persistence (15 unit tests) — 485 total unit tests across 20 modules.**
 
 **Strategic Positioning:** RavenClaws is the **"Temporal for AI agents"** — the lightweight, durable execution engine for AI agents. Unlike LangGraph (complex graphs), Temporal (heavy infra), or CrewAI (Python-only), RavenClaws gives you reliable, checkpointed agent execution in a ~5 MB binary that runs on a Raspberry Pi. **Durable execution (checkpoint/resume) is implemented in v0.9.12** — agent loop saves state after each iteration and survives process restarts. **Multi-agent patterns (debate, review-loop, research-synthesize, voting) are implemented in v0.9.13.** **Production stability verified in v0.9.11 rpi5 audit: 3,597 requests, 0 errors, 10 Mi RSS, 0 restarts over 7.5 hours.**
@@ -779,14 +779,15 @@ Per `RAVENCLAWS-MERGE.md`, the merge candidates were:
 - [x] **Skill bundle concept (`skill.yaml`)** ✅ **DONE (2026-09-04)** — new `src/skills.rs`
   (`SkillManifest`/`SkillEntrypoint`/`SkillSandbox`): declarative YAML/JSON skill manifests
   layered over the WASM plugin ABI and `shell_exec` sandbox path. 10 tests.
-- [ ] **Formal fuzzing harness** — `policy.rs` has deterministic fuzz-style tests
-  (10k-input `PolicyEngine` + `InjectionDetector`), but no `cargo fuzz`/libFuzzer
-  harness and no property tests for the config/TOML parsers. Add a `fuzz/` crate.
+- [x] **Formal fuzzing harness** ✅ **DONE (2026-09-04)** — added 2 deterministic 10k-input
+  config-parser fuzz/property tests (`LLMProvider::parse` + `Config::validate`) in `src/config.rs`,
+  complementing the existing `policy.rs` fuzz tests. `cargo fuzz`/libFuzzer (nightly + external
+  dep) intentionally deferred to preserve the zero-extra-deps "Small" pillar.
 - [ ] **SSH in container (debugging)** — optional convenience for debugging running
   agents.
 - [x] **Documentation stats sync** ✅ **DONE (2026-09-04)** — updated `AGENTS.md`,
-  `README.md`, and `website/public/index.html` to reflect v1.7.1, 1,261 tests,
-  27 modules, 9 providers.
+  `README.md`, and `website/public/index.html` to reflect v1.7.1, 1,281 tests,
+  28 modules, 9 providers.
 
 ### 🟢 Low Priority — Open
 

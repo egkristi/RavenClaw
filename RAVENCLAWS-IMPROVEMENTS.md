@@ -1,7 +1,7 @@
 # 🐦‍⬛ RavenClaws — Open Improvements
 
 **Date:** 2026-09-04 *(re-verified — supersedes the 2026-08-13 pruned edition)*
-**Upstream Version:** v1.7.1 — 1,261 tests (631 lib + 623 bin + 7 doc), 27 modules
+**Upstream Version:** v1.7.1 — 1,281 tests (649 lib + 625 bin + 7 doc), 28 modules
 
 > This document lists **only the genuinely open** improvement surface. Every
 > previously-flagged item that has since shipped (audit mutex, Helm `appVersion` drift,
@@ -9,14 +9,14 @@
 > operator, memory store, connectors, cost tracking, `/metrics`, Windows CI, deterministic
 > fuzzing, multi-modal input, WASM plugins, browser automation, advanced reasoning, durable
 > execution, per-request `/chat` model override, `swarm/synthesize` endpoint, RavenFabric
-> integration tests, documentation stats, memory tiers, and skill bundles) has been
-> **removed** and is no longer tracked here.
+> integration tests, documentation stats, memory tiers, skill bundles, and config-parser
+> fuzzing) has been **removed** and is no longer tracked here.
 
 ---
 
 ## Executive Summary
 
-RavenClaws is at **v1.7.1** — **1,261 tests** (631 lib + 623 bin + 7 doc), **27 modules**,
+RavenClaws is at **v1.7.1** — **1,281 tests** (649 lib + 625 bin + 7 doc), **28 modules**,
 zero CVEs, ~5.2 MB binary, distroless non-root container. It delivers on all five pillars:
 **Secure, Small, Efficient, Robust, Simple**.
 
@@ -40,16 +40,7 @@ M365, Slack, GitHub, Notion) are not implemented.
 
 **Recommendation:** add OAuth2 client flow + per-service adapters behind a feature gate.
 
-### 2. Formal fuzzing harness
-
-`policy.rs` has deterministic fuzz-style tests (10k-input `PolicyEngine` and
-`InjectionDetector`), but there is no `cargo fuzz` / libFuzzer harness and no property
-tests for the config/TOML parsers.
-
-**Recommendation:** add a `fuzz/` crate with libFuzzer targets for `config` and `policy`
-parsers.
-
-### 3. SSH in container (debugging)
+### 2. SSH in container (debugging)
 
 Not implemented. Optional convenience for debugging running agents.
 
@@ -101,15 +92,14 @@ OpenClaw, distroless non-root container, edge-deployable on RPi5, no telemetry.
 
 ### Medium-term (1–3 months)
 1. OAuth connector framework + Google Drive / GitHub (Medium #1)
-2. `cargo fuzz` harness for `config` / `policy` parsers (Medium #2)
 
 ### Long-term (3–12 months)
-3. Native Bedrock / Gemini / Vertex providers (Low #1)
-4. Python / TypeScript SDKs (Low #2)
-5. RavenFabric `rf-*` binary features + Terraform/Ansible (Low #3)
-6. Enterprise tier: RBAC, SSO/SAML, compliance presets (Low #4)
-7. SSH-in-container debugging (Medium #3)
+2. Native Bedrock / Gemini / Vertex providers (Low #1)
+3. Python / TypeScript SDKs (Low #2)
+4. RavenFabric `rf-*` binary features + Terraform/Ansible (Low #3)
+5. Enterprise tier: RBAC, SSO/SAML, compliance presets (Low #4)
+6. SSH-in-container debugging (Medium #2)
 
 ---
 
-*Document re-verified 2026-09-04 against upstream RavenClaws v1.7.1 (1,261 tests, 27 modules).*
+*Document re-verified 2026-09-04 against upstream RavenClaws v1.7.1 (1,281 tests, 28 modules).*
