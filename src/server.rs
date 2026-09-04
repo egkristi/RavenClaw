@@ -11,6 +11,7 @@
 //! - `GET /metrics` — Prometheus-style metrics (requests, tokens, tool calls, errors)
 //! - `GET /health/deep` — Deep health check (verifies LLM connectivity)
 //! - `POST /chat` — Send a message and get an agent response (optional `model` override)
+//! - `POST /swarm/synthesize` — Fan out a prompt to N diverse models and synthesize a consensus
 //! - `POST /execute` — Submit a background task, returns task ID
 //! - `GET /tasks/{id}` — Poll background task status and result
 //! - `GET /tools` — List available tools with schemas
@@ -42,7 +43,7 @@ use tokio::net::TcpListener;
 use tokio::signal;
 use tracing::{debug, error, info, instrument, warn};
 
-use crate::agent::{self, AgentLoopConfig};
+use crate::agent::{self, AgentLoopConfig, ConversationMemory};
 use crate::background::BackgroundTaskManager;
 use crate::config::Config;
 use crate::llm::{self, ChatMessage, LLMProviderTrait};
@@ -433,6 +434,17 @@ async fn handle_connection(mut stream: tokio::net::TcpStream, state: Arc<ServerS
                 )
             }
         },
+        ("POST", "/swarm/synthesize") => match handle_synthesize(&state, &body).await {
+            Ok(body) => (body, "200 OK", "application/json"),
+            Err(e) => {
+                state.metrics.record_error();
+                (
+                    format!("{{\"error\":\"{}\"}}", e).into_bytes(),
+                    "400 Bad Request",
+                    "application/json",
+                )
+            }
+        },
         ("POST", "/reload") => match handle_reload(&state).await {
             Ok(body) => (body, "200 OK", "application/json"),
             Err(e) => {
@@ -712,6 +724,166 @@ async fn handle_chat(state: &ServerState, body: &[u8]) -> anyhow::Result<Vec<u8>
         "response": response,
         "model": llm.model(),
         "provider": llm.provider_name(),
+    });
+
+    Ok(serde_json::to_vec(&result)?)
+}
+
+/// Handle POST /swarm/synthesize — fan out a prompt to N diverse models and
+/// synthesize a consensus answer.
+async fn handle_synthesize(state: &ServerState, body: &[u8]) -> anyhow::Result<Vec<u8>> {
+    #[derive(serde::Deserialize)]
+    struct SynthesizeRequest {
+        prompt: String,
+        #[serde(default = "default_synth_agents")]
+        n_agents: usize,
+        /// Optional list of model names; when empty, the multi-model manager's
+        /// clients (or the single default client) are used.
+        #[serde(default)]
+        models: Vec<String>,
+    }
+
+    fn default_synth_agents() -> usize {
+        3
+    }
+
+    let req: SynthesizeRequest =
+        serde_json::from_slice(body).map_err(|e| anyhow::anyhow!("Invalid request body: {}", e))?;
+
+    if req.prompt.trim().is_empty() {
+        return Err(anyhow::anyhow!("Prompt cannot be empty"));
+    }
+
+    // Resolve the set of clients to fan out to.
+    let clients: Vec<Arc<dyn LLMProviderTrait>> = if !req.models.is_empty() {
+        let manager = state.multi_model.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("No multi-model manager configured; cannot honor `models`")
+        })?;
+        req.models
+            .iter()
+            .map(|m| {
+                manager
+                    .find_by_model(m)
+                    .cloned()
+                    .ok_or_else(|| anyhow::anyhow!("Model not found: {}", m))
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?
+    } else if let Some(ref manager) = state.multi_model {
+        // Use every configured client (diverse team by default).
+        let mut v = Vec::new();
+        for i in 0..manager.client_count() {
+            if let Some(c) = manager.get_client(i) {
+                v.push(Arc::clone(c));
+            }
+        }
+        if v.is_empty() {
+            return Err(anyhow::anyhow!("No LLM clients configured"));
+        }
+        v
+    } else if let Some(ref llm) = state.llm {
+        vec![llm.clone()]
+    } else {
+        return Err(anyhow::anyhow!("No LLM client configured"));
+    };
+
+    // Diverse research perspectives, cycled across the selected clients.
+    let perspectives = [
+        (
+            "Fact-Finder",
+            "Focus on verifiable facts, data, statistics, and concrete evidence.",
+        ),
+        (
+            "Analyst",
+            "Focus on patterns, trends, cause-and-effect relationships, and strategic implications.",
+        ),
+        (
+            "Innovator",
+            "Focus on novel approaches, emerging trends, and future possibilities.",
+        ),
+    ];
+
+    let n = req.n_agents.clamp(1, clients.len().max(perspectives.len()));
+    let mut findings: Vec<(String, String, String)> = Vec::new(); // (role, provider, content)
+
+    for i in 0..n {
+        let client = &clients[i % clients.len()];
+        let (role, persona) = &perspectives[i % perspectives.len()];
+        let mut memory = ConversationMemory::new(
+            &format!("{}\n\n{}", state.config.llm.system_prompt, persona),
+            10,
+        );
+        memory.add_user_message(&format!("Research the following topic:\n\n{}", req.prompt));
+        let messages = memory.history().to_vec();
+
+        match client.chat(messages).await {
+            Ok(response) => {
+                let content = response
+                    .choices
+                    .first()
+                    .map(|c| c.message.content.clone())
+                    .unwrap_or_default();
+                findings.push((
+                    role.to_string(),
+                    client.provider_name().to_string(),
+                    content,
+                ));
+            }
+            Err(e) => {
+                warn!(role = %role, provider = client.provider_name(), error = %e, "Synthesize research agent failed");
+                findings.push((
+                    role.to_string(),
+                    client.provider_name().to_string(),
+                    format!("[research failed: {}]", e),
+                ));
+            }
+        }
+    }
+
+    // Synthesis pass — prefer the first selected client (or default).
+    let synthesizer = clients.first().cloned().unwrap_or_else(|| {
+        state
+            .llm
+            .clone()
+            .expect("an LLM client is guaranteed by the resolution above")
+    });
+
+    let mut synth_memory = ConversationMemory::new(
+        "You are a synthesis specialist. Combine multiple perspectives into a single coherent, well-structured answer. Identify common themes, resolve contradictions, and present a unified conclusion.",
+        20,
+    );
+    let mut input = String::from("Synthesize these perspectives into one final answer:\n\n");
+    for (role, provider, content) in &findings {
+        input.push_str(&format!("\n=== {} ({}) ===\n{}\n", role, provider, content));
+    }
+    synth_memory.add_user_message(&input);
+    let messages = synth_memory.history().to_vec();
+
+    let synthesis = synthesizer
+        .chat(messages)
+        .await
+        .map_err(|e| anyhow::anyhow!("Synthesis failed: {}", e))?;
+    let answer = synthesis
+        .choices
+        .first()
+        .map(|c| c.message.content.clone())
+        .unwrap_or_default();
+
+    state.metrics.record_llm_request();
+
+    let result = serde_json::json!({
+        "response": answer,
+        "agents": findings
+            .iter()
+            .map(|(role, provider, content)| {
+                serde_json::json!({
+                    "role": role,
+                    "provider": provider,
+                    "content": content,
+                })
+            })
+            .collect::<Vec<_>>(),
+        "model": synthesizer.model(),
+        "provider": synthesizer.provider_name(),
     });
 
     Ok(serde_json::to_vec(&result)?)
@@ -1046,7 +1218,7 @@ pub async fn run_server(config: Config) -> anyhow::Result<()> {
 
     info!(
         address = %bind_addr,
-        "HTTP server started — endpoints: /health, /ready, /metrics, /health/deep, /chat, /execute, /tasks/:id, /tools, /tools/:name, /reload"
+        "HTTP server started — endpoints: /health, /ready, /metrics, /health/deep, /chat, /swarm/synthesize, /execute, /tasks/:id, /tools, /tools/:name, /reload"
     );
 
     // Mark as ready after successful bind
@@ -1279,5 +1451,59 @@ mod tests {
             let body = resp.text().await.unwrap();
             assert!(body.contains("ravenclaws_requests_total"));
         }
+    }
+
+    #[tokio::test]
+    async fn test_synthesize_empty_prompt_rejected() {
+        let config = test_config();
+        let state = ServerState::new(config);
+
+        let body = br#"{"prompt": "   "}"#;
+        let result = handle_synthesize(&state, body).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Prompt cannot be empty"));
+    }
+
+    #[tokio::test]
+    async fn test_synthesize_invalid_json_rejected() {
+        let config = test_config();
+        let state = ServerState::new(config);
+
+        let body = br#"not json"#;
+        let result = handle_synthesize(&state, body).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_synthesize_models_requires_multi_model() {
+        let config = test_config();
+        let state = ServerState::new(config);
+
+        // No multi_model configured; requesting specific models must fail.
+        let body = br#"{"prompt": "hello", "models": ["gpt-4o"]}"#;
+        let result = handle_synthesize(&state, body).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("No multi-model manager"));
+    }
+
+    #[tokio::test]
+    async fn test_synthesize_no_llm_configured() {
+        let config = test_config();
+        let state = ServerState::new(config);
+
+        // No LLM client and no multi-model manager → "No LLM client configured".
+        let body = br#"{"prompt": "hello"}"#;
+        let result = handle_synthesize(&state, body).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("No LLM client configured"));
     }
 }

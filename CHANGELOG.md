@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   field on the `POST /chat` request. When present, the server selects the matching
   configured `[[llms]]` profile for that single request, enabling cost-aware
   multi-model fleets to route per-task models over HTTP. 2 new unit tests.
+- **`POST /swarm/synthesize` HTTP endpoint** — one-shot "fan out a prompt to N
+  diverse models and synthesize a consensus" endpoint. Accepts `prompt`, optional
+  `n_agents` (default 3), and an optional `models` list (empty = all configured
+  `[[llms]]` profiles). Fans out to diverse research perspectives across the
+  selected models and returns a single synthesized answer plus per-agent findings.
+  4 new unit tests.
 
 ## [v1.6.0] — 2026-08-20
 
