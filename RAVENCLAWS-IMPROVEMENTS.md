@@ -1,24 +1,14 @@
-# 🐦‍⬛ RavenClaws — Improvement Recommendations (Pruned)
+# 🐦‍⬛ RavenClaws — Open Improvements
 
-**Date:** 2026-08-13 *(re-pruned — supersedes the v1.3.0 audit edition)*
+**Date:** 2026-09-04 *(re-verified — supersedes the 2026-08-13 pruned edition)*
 **Upstream Version:** v1.7.1 — 1,239 tests (620 lib + 612 bin + 7 doc), 27 modules
 
-> **Prune note:** The previous edition of this document was written against upstream
-> **v1.3.0** (552 tests, 25 modules) and repeated many recommendations that have since
-> shipped. This edition removes every already-implemented recommendation and keeps only the
-> **genuinely open** improvement surface, re-verified against the current `master` tree
-> (v1.7.1, 27 modules, 1,239 passing tests).
-
----
-
-## Table of Contents
-
-1. [Executive Summary](#executive-summary)
-2. [Already Implemented (Removed from Recommendations)](#already-implemented-removed-from-recommendations)
-3. [🔴 High Priority — Open](#-high-priority--open)
-4. [🟡 Medium Priority — Open](#-medium-priority--open)
-5. [🟢 Low Priority — Open](#-low-priority--open)
-6. [Prioritized Action Plan](#prioritized-action-plan)
+> This document lists **only the genuinely open** improvement surface. Every
+> previously-flagged item that has since shipped (audit mutex, Helm `appVersion` drift,
+> cargo-udeps/outdated CI, `/reload` endpoint, threat model, web-access policy, K8s
+> operator, memory store, connectors, cost tracking, `/metrics`, Windows CI, deterministic
+> fuzzing, multi-modal input, WASM plugins, browser automation, advanced reasoning, durable
+> execution) has been **removed** and is no longer tracked here.
 
 ---
 
@@ -28,42 +18,15 @@ RavenClaws is at **v1.7.1** — **1,239 tests** (620 lib + 612 bin + 7 doc), **2
 zero CVEs, ~5.2 MB binary, distroless non-root container. It delivers on all five pillars:
 **Secure, Small, Efficient, Robust, Simple**.
 
-The improvement surface has shifted almost entirely to **ecosystem & strategic parity**.
-Nearly every "correctness / dead-code / hardening" item from earlier audits is now shipped
-(see [§2](#already-implemented-removed-from-recommendations)). The remaining work is:
+The remaining improvement surface is almost entirely **ecosystem & strategic parity**:
 
 | # | Gap | Category | Leverage |
 |---|---|---|---|
 | 1 | **OAuth connectors** (Google Drive, M365, Slack, GitHub, Notion) | Parity | ⭐⭐⭐ |
-| 2 | **Memory tiers** — episodic / semantic (local embeddings) / procedural | Parity (OpenClaw/Manus) | ⭐⭐⭐ |
+| 2 | **Memory tiers** — episodic / semantic (local embeddings) / procedural | Parity | ⭐⭐⭐ |
 | 3 | **Enterprise tier** — RBAC, SSO/SAML, compliance presets | Commercial | ⭐⭐⭐ |
 | 4 | **SDK ecosystem** (Python / TypeScript) | Ecosystem | ⭐⭐ |
 | 5 | **RavenFabric `rf-*` binary features** | Strategic | ⭐⭐ |
-
----
-
-## Already Implemented (Removed from Recommendations)
-
-These items were flagged in prior audits and are **now shipped**. They are listed here for
-traceability only — no further action is required.
-
-| Prior finding | Shipped in |
-|---|---|
-| Audit log mutex `unwrap()` | v0.9.3 — `lock_entries()` helper |
-| ~60 `#[allow(dead_code)]` annotations | v0.9.8 — infrastructure wiring release |
-| Helm `appVersion` drift (was `0.7.2`) | now `1.7.1` — matches `Cargo.toml` |
-| cargo-udeps / cargo-outdated red CI | `continue-on-error: true` (informational) |
-| Config hot-reload unusable in distroless | `POST /reload` HTTP endpoint in `server.rs` |
-| Threat model + posture profiles | `SECURITY.md` — Threat Model + Posture Profiles |
-| Domain-based web-access policy | `src/web_policy.rs` — category allow/block + `RateLimiter` |
-| K8s operator / programmatic pod lifecycle | `src/k8s.rs` (feature `k8s`) |
-| Memory store + session search + auto-title | `src/persistence.rs` — `MemoryStore`, `search_conversations`, `auto_title` |
-| Connectors — outbound messaging | `src/integrations.rs` — Slack/Discord/Teams/Signal/Matrix/Telegram/Email/SMS |
-| Cost tracking + cheapest routing | `src/llm.rs` — `CostTracker`, `cost_per_1k`, `route_cheapest` |
-| `/metrics` endpoint | `GET /metrics` in `server.rs` |
-| Windows CI targets | `build.yml` — `x86_64` + `aarch64` `pc-windows-msvc` |
-| Fuzzing (deterministic) | `src/policy.rs` — two 10k-input deterministic fuzz tests |
-| Multi-modal input / WASM plugins / browser automation / advanced reasoning / durable execution | v1.0.x–v1.3.0 |
 
 ---
 
@@ -77,13 +40,13 @@ through the HTTP API. The `MultiModelManager::route_cheapest()` / `route_by_comp
 library APIs exist but are not exposed over HTTP.
 
 **Recommendation:** add an optional `"model": "<name>"` field to the `/chat` request; if
-present, select that LLM profile for the request. This makes RavenClaws a first-class
-citizen for cost-aware multi-model fleets.
+present, select that LLM profile for the request.
 
 ### 2. No one-shot "team synthesis" HTTP endpoint
 
 Swarm and supervisor modes exist, but there is no one-shot "fan out a prompt to N diverse
-models and synthesize a consensus" HTTP endpoint (the `research-synthesize` mode is CLI-only).
+models and synthesize a consensus" HTTP endpoint (the `research-synthesize` mode is
+CLI-only).
 
 **Recommendation:** expose a `swarm/synthesize` endpoint taking a prompt + `n_agents` + an
 optional model list and returning a single synthesized answer.
@@ -105,15 +68,15 @@ policy-denied command returns a structured error; unreachable relay returns a ti
 
 `persistence.rs` provides `MemoryStore` (key-value + scoping) and conversation search, but
 there are no **semantic embeddings**, no **episodic** recall, and no **procedural** skill
-memory. This is the largest remaining parity gap with OpenClaw/Manus.
+memory.
 
 **Recommendation:** add local embeddings (no cloud dependency) and episodic/procedural
 tiers on top of the existing SQLite store.
 
 ### 2. OAuth connectors
 
-`integrations.rs` covers outbound messaging, but **OAuth-based connectors** (Google Drive,
-M365, Slack, GitHub, Notion) are not implemented. This is a "table-stakes" parity gap.
+`integrations.rs` covers outbound messaging only. **OAuth-based connectors** (Google Drive,
+M365, Slack, GitHub, Notion) are not implemented.
 
 **Recommendation:** add OAuth2 client flow + per-service adapters behind a feature gate.
 
@@ -126,8 +89,9 @@ The WASM plugin ABI (v1.0.1) shipped, but the higher-level "skill bundle" concep
 
 ### 4. Formal fuzzing harness
 
-`policy.rs` has deterministic fuzz tests, but there is no `cargo fuzz` / libFuzzer harness
-and no property tests for the config/TOML parsers.
+`policy.rs` has deterministic fuzz-style tests (10k-input `PolicyEngine` and
+`InjectionDetector`), but there is no `cargo fuzz` / libFuzzer harness and no property
+tests for the config/TOML parsers.
 
 **Recommendation:** add a `fuzz/` crate with libFuzzer targets for `config` and `policy`
 parsers.
@@ -138,9 +102,10 @@ Not implemented. Optional convenience for debugging running agents.
 
 ### 6. Documentation stats sync
 
-`AGENTS.md`, `README.md`, and `website/public/index.html` still reference stale figures
-(e.g. "547 tests / 25 modules", "452 tests / 18 modules") versus the actual **v1.7.1,
-1,239 tests, 27 modules**. The `ROADMAP.md` competitive-parity table may also be stale.
+`AGENTS.md` ("547 tests, 25 modules"), `README.md` ("604 tests"), and
+`website/public/index.html` ("452 tests, 18 modules") still reference stale figures versus
+the actual **v1.7.1, 1,239 tests, 27 modules**. The `ROADMAP.md` competitive-parity table
+may also be stale.
 
 **Recommendation:** single-source test/module counts and update on each release.
 
@@ -151,8 +116,7 @@ Not implemented. Optional convenience for debugging running agents.
 ### 1. Native provider support
 
 AWS **Bedrock**, Google **Gemini**, and **Vertex** are still reachable only via the LiteLLM
-gateway — no native clients. Consider adding direct Bedrock support for AWS-native
-deployments.
+gateway — no native clients.
 
 ### 2. SDKs
 
@@ -212,4 +176,4 @@ OpenClaw, distroless non-root container, edge-deployable on RPi5, no telemetry.
 
 ---
 
-*Document re-pruned 2026-08-13 against upstream RavenClaws v1.7.1 (1,239 tests, 27 modules).*
+*Document re-verified 2026-09-04 against upstream RavenClaws v1.7.1 (1,239 tests, 27 modules).*
